@@ -1,79 +1,379 @@
+import {
+  Form,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+} from "react-router";
 import { useEffect, useRef, useState } from "react";
+import { authenticate } from "../shopify.server";
+import db from "../db.server";
 
 const RESTAURANT = {
   id: "Jamaica 2",
   name: "Mannies Aroma Jerk",
 };
 
-const STARTING_ORDERS = [
-  {
-    id: "1001",
-    orderNumber: "#1001",
-    restaurantId: "Jamaica 2",
-    time: "11:45",
-    customer: "Test Customer",
-    items: [
-      {
-        name: "Jerk Chicken Meal Deal",
-        quantity: 2,
-      },
-      {
-        name: "Caribbean Drinks",
-        quantity: 2,
-      },
-    ],
-    foodTotal: 30,
-    delivery: 2.5,
-    serviceFee: 0.42,
-    status: "new",
-  },
-  {
-    id: "1002",
-    orderNumber: "#1002",
-    restaurantId: "PETERS 1",
-    time: "11:50",
-    customer: "Another Customer",
-    items: [
-      {
-        name: "Chicken Meal Deal",
-        quantity: 1,
-      },
-    ],
-    foodTotal: 20,
-    delivery: 3,
-    serviceFee: 0.42,
-    status: "new",
-  },
-];
-
 function money(value) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
-  }).format(value);
+  }).format(Number(value || 0));
+}
+
+function getRestaurantId(lineItem) {
+  const attribute = lineItem.customAttributes?.find(
+    (item) => item.key === "_Restaurant ID",
+  );
+
+  return attribute?.value || "";
+}
+
+function getOrderRestaurantId(order) {
+  for (const item of order.lineItems?.nodes || []) {
+    const restaurantId = getRestaurantId(item);
+
+    if (restaurantId) {
+      return restaurantId;
+    }
+  }
+
+  return "";
+}
+
+function getFoodTotal(order) {
+  return (order.lineItems?.nodes || []).reduce(
+    (total, item) => {
+      const quantity = Number(item.quantity || 0);
+
+      const unitPrice = Number(
+        item.originalUnitPriceSet?.shopMoney?.amount || 0,
+      );
+
+      return total + unitPrice * quantity;
+    },
+    0,
+  );
+}
+
+export async function loader({ request }) {
+  const { admin } = await authenticate.admin(request);
+
+  const response = await admin.graphql(`
+    query RestaurantOrders {
+      orders(first: 50, reverse: true) {
+        nodes {
+          id
+          name
+          createdAt
+          displayFinancialStatus
+
+          currentTotalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+
+          lineItems(first: 50) {
+            nodes {
+              name
+              quantity
+
+              originalUnitPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+
+              customAttributes {
+                key
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `);
+
+  const result = await response.json();
+
+  if (result.errors) {
+    console.error("SHOPIFY ORDER ERROR:", result.errors);
+
+    return {
+      restaurant: RESTAURANT,
+      orders: [],
+      error: "Could not load Shopify orders.",
+    };
+  }
+
+  const shopifyOrders =
+    result.data?.orders?.nodes || [];
+
+  const restaurantRecord =
+    await db.restaurant.findUnique({
+      where: {
+        restaurantId: RESTAURANT.id,
+      },
+    });
+
+  if (!restaurantRecord) {
+    return {
+      restaurant: RESTAURANT,
+      orders: [],
+      error: "Restaurant record not found.",
+    };
+  }
+
+  const decisions =
+    await db.orderDecision.findMany({
+      where: {
+        restaurantId: restaurantRecord.id,
+      },
+    });
+
+  const decisionMap = new Map(
+    decisions.map((decision) => [
+      decision.shopifyOrderId,
+      decision.status,
+    ]),
+  );
+
+  const orders = shopifyOrders
+    .filter(
+      (order) =>
+        getOrderRestaurantId(order) === RESTAURANT.id,
+    )
+    .map((order) => {
+      const foodTotal = getFoodTotal(order);
+
+      return {
+        id: order.id,
+        orderNumber: order.name,
+        createdAt: order.createdAt,
+        financialStatus:
+          order.displayFinancialStatus,
+        shopifyTotal: Number(
+          order.currentTotalPriceSet?.shopMoney
+            ?.amount || 0,
+        ),
+        foodTotal,
+        commission: foodTotal * 0.1,
+        status:
+          decisionMap.get(order.id) || "NEW",
+        items: (order.lineItems?.nodes || []).map(
+          (item) => ({
+            name: item.name,
+            quantity: item.quantity,
+          }),
+        ),
+      };
+    });
+
+  return {
+    restaurant: {
+      id: restaurantRecord.id,
+      restaurantId:
+        restaurantRecord.restaurantId,
+      name: restaurantRecord.name,
+      acceptingOrders:
+        restaurantRecord.acceptingOrders,
+    },
+    orders,
+    error: null,
+  };
+}
+
+export async function action({ request }) {
+  const { admin } = await authenticate.admin(request);
+
+  const formData = await request.formData();
+
+  const intent = String(
+    formData.get("intent") || "",
+  );
+
+  const shopifyOrderId = String(
+    formData.get("shopifyOrderId") || "",
+  );
+
+  const orderNumber = String(
+    formData.get("orderNumber") || "",
+  );
+
+  if (
+    intent !== "accept-order" &&
+    intent !== "reject-order"
+  ) {
+    return {
+      success: false,
+      message: "Invalid action.",
+    };
+  }
+
+  if (!shopifyOrderId || !orderNumber) {
+    return {
+      success: false,
+      message: "Order information is missing.",
+    };
+  }
+
+  const restaurant =
+    await db.restaurant.findUnique({
+      where: {
+        restaurantId: RESTAURANT.id,
+      },
+    });
+
+  if (!restaurant) {
+    return {
+      success: false,
+      message: "Restaurant not found.",
+    };
+  }
+
+  /*
+    SECURITY CHECK
+
+    Before saving the decision, fetch the Shopify
+    order again and confirm it really belongs to
+    this restaurant.
+  */
+
+  const verifyResponse = await admin.graphql(
+    `
+      query VerifyOrder($id: ID!) {
+        order(id: $id) {
+          id
+          name
+
+          lineItems(first: 50) {
+            nodes {
+              customAttributes {
+                key
+                value
+              }
+            }
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        id: shopifyOrderId,
+      },
+    },
+  );
+
+  const verifyResult =
+    await verifyResponse.json();
+
+  const shopifyOrder =
+    verifyResult.data?.order;
+
+  if (
+    !shopifyOrder ||
+    getOrderRestaurantId(shopifyOrder) !==
+      RESTAURANT.id
+  ) {
+    return {
+      success: false,
+      message:
+        "This order does not belong to this restaurant.",
+    };
+  }
+
+  const status =
+    intent === "accept-order"
+      ? "ACCEPTED"
+      : "REJECTED";
+
+  await db.orderDecision.upsert({
+    where: {
+      shopifyOrderId_restaurantId: {
+        shopifyOrderId,
+        restaurantId: restaurant.id,
+      },
+    },
+
+    update: {
+      status,
+      orderNumber: shopifyOrder.name,
+      decidedAt: new Date(),
+    },
+
+    create: {
+      shopifyOrderId,
+      orderNumber: shopifyOrder.name,
+      restaurantId: restaurant.id,
+      status,
+    },
+  });
+
+  return {
+    success: true,
+    orderNumber: shopifyOrder.name,
+    status,
+  };
 }
 
 export default function Index() {
-  const [orders, setOrders] = useState(STARTING_ORDERS);
-  const [paused, setPaused] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const {
+    restaurant,
+    orders,
+    error,
+  } = useLoaderData();
+
+  const actionData = useActionData();
+  const navigation = useNavigation();
+
+  const [soundEnabled, setSoundEnabled] =
+    useState(false);
 
   const audioContextRef = useRef(null);
   const alarmTimerRef = useRef(null);
 
-  const restaurantOrders = orders.filter(
-    (order) => order.restaurantId === RESTAURANT.id,
+  const newOrders = orders.filter(
+    (order) => order.status === "NEW",
   );
 
-  const newOrders = restaurantOrders.filter(
-    (order) => order.status === "new",
+  const acceptedOrders = orders.filter(
+    (order) => order.status === "ACCEPTED",
+  );
+
+  const rejectedOrders = orders.filter(
+    (order) => order.status === "REJECTED",
   );
 
   const firstNewOrder = newOrders[0];
 
+  const acceptedFoodSales =
+    acceptedOrders.reduce(
+      (total, order) =>
+        total + order.foodTotal,
+      0,
+    );
+
+  const commission =
+    acceptedFoodSales * 0.1;
+
+  /*
+    For now this is the food amount after
+    Meal Deal Hub's 10% commission.
+
+    Delivery will be separated once we pull
+    the exact Shopify delivery amount.
+  */
+
+  const restaurantEarnings =
+    acceptedFoodSales - commission;
+
   function stopAlarm() {
     if (alarmTimerRef.current) {
       clearInterval(alarmTimerRef.current);
+
       alarmTimerRef.current = null;
     }
   }
@@ -81,20 +381,26 @@ export default function Index() {
   function makeAlarmSound() {
     try {
       const AudioContext =
-        window.AudioContext || window.webkitAudioContext;
+        window.AudioContext ||
+        window.webkitAudioContext;
 
       if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
+        audioContextRef.current =
+          new AudioContext();
       }
 
-      const context = audioContextRef.current;
+      const context =
+        audioContextRef.current;
 
       if (context.state === "suspended") {
         context.resume();
       }
 
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
+      const oscillator =
+        context.createOscillator();
+
+      const gain =
+        context.createGain();
 
       oscillator.type = "square";
       oscillator.frequency.value = 880;
@@ -113,9 +419,15 @@ export default function Index() {
       gain.connect(context.destination);
 
       oscillator.start();
-      oscillator.stop(context.currentTime + 0.7);
+
+      oscillator.stop(
+        context.currentTime + 0.7,
+      );
     } catch (error) {
-      console.log("Alarm unavailable", error);
+      console.log(
+        "Alarm unavailable",
+        error,
+      );
     }
   }
 
@@ -127,54 +439,86 @@ export default function Index() {
   useEffect(() => {
     stopAlarm();
 
-    if (newOrders.length > 0 && soundEnabled) {
+    if (
+      newOrders.length > 0 &&
+      soundEnabled
+    ) {
       makeAlarmSound();
 
-      alarmTimerRef.current = setInterval(() => {
-        makeAlarmSound();
-      }, 1500);
+      alarmTimerRef.current =
+        setInterval(() => {
+          makeAlarmSound();
+        }, 1500);
     }
 
     return () => stopAlarm();
   }, [newOrders.length, soundEnabled]);
 
-  function updateOrder(id, status) {
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === id &&
-        order.restaurantId === RESTAURANT.id
-          ? { ...order, status }
-          : order,
-      ),
-    );
+  function formatTime(value) {
+    return new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone: "Europe/London",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    ).format(new Date(value));
   }
 
-  const acceptedOrders = restaurantOrders.filter(
-    (order) => order.status === "accepted",
-  );
-
-  const foodSales = acceptedOrders.reduce(
-    (total, order) => total + order.foodTotal,
-    0,
-  );
-
-  const deliveryIncome = acceptedOrders.reduce(
-    (total, order) => total + order.delivery,
-    0,
-  );
-
-  const commission = foodSales * 0.1;
-
-  const restaurantEarnings =
-    foodSales * 0.9 + deliveryIncome;
-
-  const serviceFees = acceptedOrders.reduce(
-    (total, order) => total + order.serviceFee,
-    0,
-  );
+  const isSubmitting =
+    navigation.state === "submitting";
 
   return (
-    <s-page heading={RESTAURANT.name}>
+    <s-page heading={restaurant.name}>
+      {error && (
+        <s-section>
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-heading>
+              Order connection error
+            </s-heading>
+
+            <s-text>{error}</s-text>
+          </s-box>
+        </s-section>
+      )}
+
+      {actionData?.success && (
+        <s-section>
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-heading>
+              ✓ {actionData.orderNumber}{" "}
+              {actionData.status}
+            </s-heading>
+          </s-box>
+        </s-section>
+      )}
+
+      {actionData?.success === false && (
+        <s-section>
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-heading>
+              Action failed
+            </s-heading>
+
+            <s-text>
+              {actionData.message}
+            </s-text>
+          </s-box>
+        </s-section>
+      )}
+
       {!soundEnabled && (
         <s-section>
           <s-box
@@ -182,11 +526,13 @@ export default function Index() {
             borderWidth="base"
             borderRadius="base"
           >
-            <s-heading>Order Alert Sound</s-heading>
+            <s-heading>
+              Order Alert Sound
+            </s-heading>
 
             <s-paragraph>
-              Enable the terminal alarm so new orders sound
-              a loud alert.
+              Enable the terminal alarm so new
+              orders sound a loud alert.
             </s-paragraph>
 
             <s-button
@@ -206,59 +552,132 @@ export default function Index() {
             borderWidth="base"
             borderRadius="base"
           >
-            <s-stack direction="block" gap="base">
+            <s-stack
+              direction="block"
+              gap="base"
+            >
               <s-heading>
-                NEW ORDER {firstNewOrder.orderNumber}
+                NEW ORDER{" "}
+                {firstNewOrder.orderNumber}
               </s-heading>
 
               <s-heading>
                 {money(
-                  firstNewOrder.foodTotal +
-                    firstNewOrder.delivery +
-                    firstNewOrder.serviceFee,
+                  firstNewOrder.shopifyTotal,
                 )}
               </s-heading>
 
               <s-text>
-                Received: {firstNewOrder.time}
+                Received:{" "}
+                {formatTime(
+                  firstNewOrder.createdAt,
+                )}
               </s-text>
+
+              {firstNewOrder.items.map(
+                (item, index) => (
+                  <s-heading key={index}>
+                    {item.quantity} ×{" "}
+                    {item.name}
+                  </s-heading>
+                ),
+              )}
 
               <s-text>
-                Customer: {firstNewOrder.customer}
+                Payment:{" "}
+                {
+                  firstNewOrder.financialStatus
+                }
               </s-text>
 
-              {firstNewOrder.items.map((item, index) => (
-                <s-heading key={index}>
-                  {item.quantity} × {item.name}
-                </s-heading>
-              ))}
+              <s-stack
+                direction="inline"
+                gap="base"
+              >
+                <Form method="post">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="accept-order"
+                  />
 
-              <s-stack direction="inline" gap="base">
-                <s-button
-                  variant="primary"
-                  onClick={() =>
-                    updateOrder(
-                      firstNewOrder.id,
-                      "accepted",
-                    )
-                  }
-                >
-                  ACCEPT ORDER
-                </s-button>
+                  <input
+                    type="hidden"
+                    name="shopifyOrderId"
+                    value={firstNewOrder.id}
+                  />
 
-                <s-button
-                  tone="critical"
-                  onClick={() =>
-                    updateOrder(
-                      firstNewOrder.id,
-                      "rejected",
-                    )
-                  }
-                >
-                  REJECT ORDER
-                </s-button>
+                  <input
+                    type="hidden"
+                    name="orderNumber"
+                    value={
+                      firstNewOrder.orderNumber
+                    }
+                  />
+
+                  <s-button
+                    type="submit"
+                    variant="primary"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting
+                      ? "SAVING..."
+                      : "ACCEPT ORDER"}
+                  </s-button>
+                </Form>
+
+                <Form method="post">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="reject-order"
+                  />
+
+                  <input
+                    type="hidden"
+                    name="shopifyOrderId"
+                    value={firstNewOrder.id}
+                  />
+
+                  <input
+                    type="hidden"
+                    name="orderNumber"
+                    value={
+                      firstNewOrder.orderNumber
+                    }
+                  />
+
+                  <s-button
+                    type="submit"
+                    tone="critical"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting
+                      ? "SAVING..."
+                      : "REJECT ORDER"}
+                  </s-button>
+                </Form>
               </s-stack>
             </s-stack>
+          </s-box>
+        </s-section>
+      )}
+
+      {!firstNewOrder && (
+        <s-section>
+          <s-box
+            padding="large"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-heading>
+              ✓ No New Orders
+            </s-heading>
+
+            <s-text>
+              New Meal Deal Hub orders will
+              appear here automatically.
+            </s-text>
           </s-box>
         </s-section>
       )}
@@ -274,26 +693,8 @@ export default function Index() {
             borderRadius="base"
           >
             <s-text>NEW ORDERS</s-text>
-            <s-heading>{newOrders.length}</s-heading>
-          </s-box>
-
-          <s-box
-            padding="base"
-            borderWidth="base"
-            borderRadius="base"
-          >
-            <s-text>MEAL DEAL SALES</s-text>
-            <s-heading>{money(foodSales)}</s-heading>
-          </s-box>
-
-          <s-box
-            padding="base"
-            borderWidth="base"
-            borderRadius="base"
-          >
-            <s-text>YOUR EARNINGS</s-text>
             <s-heading>
-              {money(restaurantEarnings)}
+              {newOrders.length}
             </s-heading>
           </s-box>
 
@@ -302,7 +703,38 @@ export default function Index() {
             borderWidth="base"
             borderRadius="base"
           >
-            <s-text>NEXT PAYOUT</s-text>
+            <s-text>
+              ACCEPTED ORDERS
+            </s-text>
+
+            <s-heading>
+              {acceptedOrders.length}
+            </s-heading>
+          </s-box>
+
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-text>
+              MEAL DEAL SALES
+            </s-text>
+
+            <s-heading>
+              {money(acceptedFoodSales)}
+            </s-heading>
+          </s-box>
+
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+          >
+            <s-text>
+              YOUR EARNINGS
+            </s-text>
+
             <s-heading>
               {money(restaurantEarnings)}
             </s-heading>
@@ -310,109 +742,80 @@ export default function Index() {
         </s-grid>
       </s-section>
 
-      <s-section heading="Restaurant Status">
-        <s-box
-          padding="base"
-          borderWidth="base"
-          borderRadius="base"
-        >
-          <s-heading>
-            {paused
-              ? "Orders Paused"
-              : "Accepting Orders"}
-          </s-heading>
-
-          <s-paragraph>
-            {paused
-              ? "Your restaurant is currently paused."
-              : "Your restaurant is available to receive orders."}
-          </s-paragraph>
-
-          <s-button onClick={() => setPaused(!paused)}>
-            {paused
-              ? "Resume Orders"
-              : "Pause Orders"}
-          </s-button>
-        </s-box>
-      </s-section>
-
       <s-section heading="Orders">
-        <s-stack direction="block" gap="base">
-          {restaurantOrders.map((order) => {
-            const orderCommission =
-              order.foodTotal * 0.1;
-
-            const restaurantGets =
-              order.status === "accepted"
-                ? order.foodTotal * 0.9 +
-                  order.delivery
-                : 0;
-
-            const customerTotal =
-              order.foodTotal +
-              order.delivery +
-              order.serviceFee;
-
-            return (
-              <s-box
-                key={order.id}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
+        <s-stack
+          direction="block"
+          gap="base"
+        >
+          {orders.map((order) => (
+            <s-box
+              key={order.id}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+            >
+              <s-stack
+                direction="block"
+                gap="small"
               >
-                <s-stack direction="block" gap="small">
-                  <s-heading>
-                    {order.orderNumber}
-                  </s-heading>
+                <s-heading>
+                  {order.orderNumber}
+                </s-heading>
 
-                  <s-text>
-                    Customer: {order.customer}
-                  </s-text>
-
-                  {order.items.map((item, index) => (
-                    <s-text key={index}>
-                      {item.quantity} × {item.name}
-                    </s-text>
-                  ))}
-
-                  <s-text>
-                    Meal deals:{" "}
-                    {money(order.foodTotal)}
-                  </s-text>
-
-                  <s-text>
-                    Delivery: {money(order.delivery)}
-                  </s-text>
-
-                  <s-text>
-                    Service fee:{" "}
-                    {money(order.serviceFee)}
-                  </s-text>
-
-                  <s-heading>
-                    Customer total:{" "}
-                    {money(customerTotal)}
-                  </s-heading>
-
-                  <s-text>
-                    Meal Deal Hub commission:{" "}
-                    {money(orderCommission)}
-                  </s-text>
-
-                  {order.status === "accepted" && (
-                    <s-heading>
-                      You receive:{" "}
-                      {money(restaurantGets)}
-                    </s-heading>
+                <s-text>
+                  Received:{" "}
+                  {formatTime(
+                    order.createdAt,
                   )}
+                </s-text>
 
-                  <s-text>
-                    Status: {order.status.toUpperCase()}
-                  </s-text>
-                </s-stack>
-              </s-box>
-            );
-          })}
+                {order.items.map(
+                  (item, index) => (
+                    <s-text key={index}>
+                      {item.quantity} ×{" "}
+                      {item.name}
+                    </s-text>
+                  ),
+                )}
+
+                <s-heading>
+                  Shopify total:{" "}
+                  {money(
+                    order.shopifyTotal,
+                  )}
+                </s-heading>
+
+                <s-text>
+                  Meal deals:{" "}
+                  {money(order.foodTotal)}
+                </s-text>
+
+                <s-text>
+                  Meal Deal Hub commission:{" "}
+                  {money(order.commission)}
+                </s-text>
+
+                <s-text>
+                  Payment:{" "}
+                  {order.financialStatus}
+                </s-text>
+
+                <s-heading>
+                  Status: {order.status}
+                </s-heading>
+
+                {order.status ===
+                  "ACCEPTED" && (
+                  <s-heading>
+                    Restaurant receives:{" "}
+                    {money(
+                      order.foodTotal * 0.9,
+                    )}
+                  </s-heading>
+                )}
+              </s-stack>
+            </s-box>
+          ))}
         </s-stack>
       </s-section>
 
@@ -423,22 +826,23 @@ export default function Index() {
           borderRadius="base"
         >
           <s-heading>
-            Next payout: {money(restaurantEarnings)}
+            Next payout:{" "}
+            {money(restaurantEarnings)}
           </s-heading>
 
-          <s-text>
+          <s-paragraph>
             Period: Monday – Sunday
-          </s-text>
+          </s-paragraph>
 
-          <s-text>
+          <s-paragraph>
             Meal Deal Hub commission:{" "}
             {money(commission)}
-          </s-text>
+          </s-paragraph>
 
-          <s-text>
-            Service fees retained by Meal Deal Hub:{" "}
-            {money(serviceFees)}
-          </s-text>
+          <s-paragraph>
+            Rejected orders:{" "}
+            {rejectedOrders.length}
+          </s-paragraph>
         </s-box>
       </s-section>
     </s-page>

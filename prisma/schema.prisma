@@ -38,7 +38,8 @@ model Restaurant {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  users RestaurantUser[]
+  users          RestaurantUser[]
+  orderDecisions OrderDecision[]
 }
 
 model RestaurantUser {
@@ -56,4 +57,20 @@ model RestaurantUser {
   updatedAt        DateTime  @updatedAt
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+}
+
+model OrderDecision {
+  id             Int      @id @default(autoincrement())
+  shopifyOrderId String
+  orderNumber    String
+  restaurantId   Int
+  status         String
+  decidedAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([shopifyOrderId, restaurantId])
+  @@index([restaurantId])
+  @@index([status])
 }

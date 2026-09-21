@@ -7,8 +7,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import crypto from "node:crypto";
 import db from "../db.server";
+import shopify from "../shopify.server";
 
 const COOKIE_NAME = "mdh_restaurant_session";
+const SHOP_DOMAIN = "mealdealhub.myshopify.com";
 
 function getSessionSecret() {
   return (
@@ -34,7 +36,10 @@ function readCookie(request) {
       .filter(Boolean)
       .map((cookie) => {
         const index = cookie.indexOf("=");
-        if (index === -1) return [cookie, ""];
+
+        if (index === -1) {
+          return [cookie, ""];
+        }
 
         return [
           cookie.slice(0, index),
@@ -50,6 +55,7 @@ function verifySession(sessionValue) {
   if (!sessionValue) return null;
 
   const [userId, signature] = sessionValue.split(".");
+
   if (!userId || !signature) return null;
 
   const expectedSignature = sign(userId);
@@ -99,12 +105,179 @@ async function getAuthenticatedUser(request) {
   return user;
 }
 
+function getAttribute(attributes, key) {
+  return (
+    attributes?.find(
+      (attribute) => attribute.key === key,
+    )?.value || ""
+  );
+}
+
+function londonTime(dateString) {
+  if (!dateString) return "";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(dateString));
+}
+
+async function getShopifyOrders(restaurantId) {
+  try {
+    /*
+      The Shopify React Router template stores the
+      installed shop's offline session in Prisma.
+
+      For an offline session the shop is:
+      mealdealhub.myshopify.com
+    */
+
+    const offlineSession =
+      await shopify.sessionStorage.loadSession(
+        `offline_${SHOP_DOMAIN}`,
+      );
+
+    if (!offlineSession?.accessToken) {
+      console.error(
+        "Meal Deal Hub: Shopify offline session not found.",
+      );
+
+      return [];
+    }
+
+    const client = new shopify.api.clients.Graphql({
+      session: offlineSession,
+    });
+
+    const response = await client.request(`
+      query RestaurantOrders {
+        orders(
+          first: 50
+          reverse: true
+        ) {
+          nodes {
+            id
+            name
+            createdAt
+            displayFinancialStatus
+
+            currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+
+            lineItems(first: 50) {
+              nodes {
+                name
+                quantity
+
+                originalTotalSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+
+                customAttributes {
+                  key
+                  value
+                }
+              }
+            }
+          }
+        }
+      }
+    `);
+
+    const nodes =
+      response?.data?.orders?.nodes || [];
+
+    return nodes
+      .map((order) => {
+        const matchingItems = order.lineItems.nodes.filter(
+          (item) =>
+            getAttribute(
+              item.customAttributes,
+              "_Restaurant ID",
+            ) === restaurantId,
+        );
+
+        if (matchingItems.length === 0) {
+          return null;
+        }
+
+        const foodTotal = matchingItems.reduce(
+          (total, item) =>
+            total +
+            Number(
+              item.originalTotalSet?.shopMoney?.amount ||
+                0,
+            ),
+          0,
+        );
+
+        return {
+          id: order.id,
+          orderNumber: order.name,
+          restaurantId,
+          time: londonTime(order.createdAt),
+
+          customer: "Customer",
+
+          items: matchingItems.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+          })),
+
+          foodTotal,
+
+          /*
+            Delivery and service-fee breakdown will
+            be connected separately once we read the
+            actual Shopify shipping/fee data.
+
+            For now the Shopify order total displayed
+            is the real amount paid.
+          */
+
+          delivery: 0,
+          serviceFee: 0,
+
+          total: Number(
+            order.currentTotalPriceSet?.shopMoney
+              ?.amount || 0,
+          ),
+
+          financialStatus:
+            order.displayFinancialStatus,
+
+          status: "new",
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.error(
+      "Meal Deal Hub Shopify order error:",
+      error,
+    );
+
+    return [];
+  }
+}
+
 export async function loader({ request }) {
   const user = await getAuthenticatedUser(request);
 
   if (!user) {
     throw redirect("/restaurant/login");
   }
+
+  const orders = await getShopifyOrders(
+    user.restaurant.restaurantId,
+  );
 
   return {
     user: {
@@ -115,10 +288,14 @@ export async function loader({ request }) {
 
     restaurant: {
       id: user.restaurant.id,
-      restaurantId: user.restaurant.restaurantId,
+      restaurantId:
+        user.restaurant.restaurantId,
       name: user.restaurant.name,
-      acceptingOrders: user.restaurant.acceptingOrders,
+      acceptingOrders:
+        user.restaurant.acceptingOrders,
     },
+
+    orders,
   };
 }
 
@@ -130,7 +307,9 @@ export async function action({ request }) {
   }
 
   const formData = await request.formData();
-  const intent = String(formData.get("intent") || "");
+  const intent = String(
+    formData.get("intent") || "",
+  );
 
   if (intent === "pause-orders") {
     await db.restaurant.update({
@@ -153,84 +332,52 @@ export async function action({ request }) {
   return { success: false };
 }
 
-/* TEST ORDERS — Shopify orders replace these later */
-
-const STARTING_ORDERS = [
-  {
-    id: "1001",
-    orderNumber: "#1001",
-    restaurantId: "Jamaica 2",
-    time: "14:32",
-    customer: "Test Customer",
-
-    items: [
-      {
-        name: "Jerk Chicken Meal Deal",
-        quantity: 2,
-      },
-      {
-        name: "Caribbean Drinks",
-        quantity: 2,
-      },
-    ],
-
-    foodTotal: 30,
-    delivery: 2.5,
-    serviceFee: 0.42,
-    status: "new",
-  },
-
-  {
-    id: "1002",
-    orderNumber: "#1002",
-    restaurantId: "PETERS 1",
-    time: "14:35",
-    customer: "Other Customer",
-
-    items: [
-      {
-        name: "Chicken Meal Deal",
-        quantity: 1,
-      },
-    ],
-
-    foodTotal: 20,
-    delivery: 3,
-    serviceFee: 0.42,
-    status: "new",
-  },
-];
-
 function money(value) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
-  }).format(value);
+  }).format(Number(value || 0));
 }
 
 export default function RestaurantDashboard() {
-  const { restaurant, user } = useLoaderData();
+  const {
+    restaurant,
+    user,
+    orders: shopifyOrders,
+  } = useLoaderData();
+
   const navigation = useNavigation();
 
-  const [activeTab, setActiveTab] = useState("orders");
-  const [orders, setOrders] = useState(STARTING_ORDERS);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [activeTab, setActiveTab] =
+    useState("orders");
+
+  const [orders, setOrders] =
+    useState(shopifyOrders || []);
+
+  const [soundEnabled, setSoundEnabled] =
+    useState(false);
 
   const audioContextRef = useRef(null);
   const alarmTimerRef = useRef(null);
 
+  useEffect(() => {
+    setOrders(shopifyOrders || []);
+  }, [shopifyOrders]);
+
   const restaurantOrders = orders.filter(
     (order) =>
-      order.restaurantId === restaurant.restaurantId,
+      order.restaurantId ===
+      restaurant.restaurantId,
   );
 
   const newOrders = restaurantOrders.filter(
     (order) => order.status === "new",
   );
 
-  const acceptedOrders = restaurantOrders.filter(
-    (order) => order.status === "accepted",
-  );
+  const acceptedOrders =
+    restaurantOrders.filter(
+      (order) => order.status === "accepted",
+    );
 
   const firstNewOrder = newOrders[0];
 
@@ -251,17 +398,22 @@ export default function RestaurantDashboard() {
         window.webkitAudioContext;
 
       if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
+        audioContextRef.current =
+          new AudioContext();
       }
 
-      const context = audioContextRef.current;
+      const context =
+        audioContextRef.current;
 
       if (context.state === "suspended") {
         context.resume();
       }
 
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
+      const oscillator =
+        context.createOscillator();
+
+      const gain =
+        context.createGain();
 
       oscillator.type = "square";
       oscillator.frequency.value = 880;
@@ -280,9 +432,15 @@ export default function RestaurantDashboard() {
       gain.connect(context.destination);
 
       oscillator.start();
-      oscillator.stop(context.currentTime + 0.7);
+
+      oscillator.stop(
+        context.currentTime + 0.7,
+      );
     } catch (error) {
-      console.log("Alarm unavailable", error);
+      console.log(
+        "Alarm unavailable",
+        error,
+      );
     }
   }
 
@@ -294,12 +452,16 @@ export default function RestaurantDashboard() {
   useEffect(() => {
     stopAlarm();
 
-    if (newOrders.length > 0 && soundEnabled) {
+    if (
+      newOrders.length > 0 &&
+      soundEnabled
+    ) {
       makeAlarmSound();
 
-      alarmTimerRef.current = setInterval(() => {
-        makeAlarmSound();
-      }, 1500);
+      alarmTimerRef.current =
+        setInterval(() => {
+          makeAlarmSound();
+        }, 1500);
     }
 
     return () => stopAlarm();
@@ -309,32 +471,41 @@ export default function RestaurantDashboard() {
     setOrders((current) =>
       current.map((order) =>
         order.id === id &&
-        order.restaurantId === restaurant.restaurantId
+        order.restaurantId ===
+          restaurant.restaurantId
           ? { ...order, status }
           : order,
       ),
     );
   }
 
-  const acceptedFoodSales = acceptedOrders.reduce(
-    (total, order) => total + order.foodTotal,
-    0,
-  );
+  const acceptedFoodSales =
+    acceptedOrders.reduce(
+      (total, order) =>
+        total + order.foodTotal,
+      0,
+    );
 
-  const deliveryIncome = acceptedOrders.reduce(
-    (total, order) => total + order.delivery,
-    0,
-  );
+  const deliveryIncome =
+    acceptedOrders.reduce(
+      (total, order) =>
+        total + order.delivery,
+      0,
+    );
 
-  const commission = acceptedFoodSales * 0.1;
+  const commission =
+    acceptedFoodSales * 0.1;
 
   const restaurantEarnings =
-    acceptedFoodSales * 0.9 + deliveryIncome;
+    acceptedFoodSales * 0.9 +
+    deliveryIncome;
 
-  const serviceFees = acceptedOrders.reduce(
-    (total, order) => total + order.serviceFee,
-    0,
-  );
+  const serviceFees =
+    acceptedOrders.reduce(
+      (total, order) =>
+        total + order.serviceFee,
+      0,
+    );
 
   return (
     <main style={styles.page}>
@@ -345,12 +516,15 @@ export default function RestaurantDashboard() {
               MEAL DEAL HUB
             </div>
 
-            <h1 style={styles.restaurantName}>
+            <h1
+              style={styles.restaurantName}
+            >
               {restaurant.name}
             </h1>
 
             <div style={styles.location}>
-              Restaurant ID: {restaurant.restaurantId}
+              Restaurant ID:{" "}
+              {restaurant.restaurantId}
             </div>
           </div>
 
@@ -421,28 +595,35 @@ export default function RestaurantDashboard() {
                       🔔 NEW ORDER
                     </div>
 
-                    <h2 style={styles.orderNumber}>
-                      {firstNewOrder.orderNumber}
+                    <h2
+                      style={styles.orderNumber}
+                    >
+                      {
+                        firstNewOrder.orderNumber
+                      }
                     </h2>
 
-                    <div style={styles.greyText}>
-                      Received {firstNewOrder.time}
+                    <div
+                      style={styles.greyText}
+                    >
+                      Received{" "}
+                      {firstNewOrder.time}
                     </div>
                   </div>
 
                   <div style={styles.total}>
                     {money(
-                      firstNewOrder.foodTotal +
-                        firstNewOrder.delivery +
-                        firstNewOrder.serviceFee,
+                      firstNewOrder.total,
                     )}
                   </div>
                 </div>
 
                 <p style={styles.customer}>
-                  Customer:{" "}
+                  Shopify order:{" "}
                   <strong>
-                    {firstNewOrder.customer}
+                    {
+                      firstNewOrder.orderNumber
+                    }
                   </strong>
                 </p>
 
@@ -453,7 +634,11 @@ export default function RestaurantDashboard() {
                         key={index}
                         style={styles.item}
                       >
-                        <span style={styles.quantity}>
+                        <span
+                          style={
+                            styles.quantity
+                          }
+                        >
                           {item.quantity} ×
                         </span>{" "}
                         {item.name}
@@ -465,7 +650,9 @@ export default function RestaurantDashboard() {
                 <div style={styles.actions}>
                   <button
                     type="button"
-                    style={styles.acceptButton}
+                    style={
+                      styles.acceptButton
+                    }
                     onClick={() =>
                       updateOrder(
                         firstNewOrder.id,
@@ -478,7 +665,9 @@ export default function RestaurantDashboard() {
 
                   <button
                     type="button"
-                    style={styles.rejectButton}
+                    style={
+                      styles.rejectButton
+                    }
                     onClick={() =>
                       updateOrder(
                         firstNewOrder.id,
@@ -492,10 +681,15 @@ export default function RestaurantDashboard() {
               </section>
             ) : (
               <section style={styles.waiting}>
-                <div style={styles.tick}>✓</div>
+                <div style={styles.tick}>
+                  ✓
+                </div>
+
                 <h2>No New Orders</h2>
+
                 <p>
-                  New orders will appear here automatically.
+                  New orders will appear here
+                  automatically.
                 </p>
               </section>
             )}
@@ -511,31 +705,50 @@ export default function RestaurantDashboard() {
                 </span>
               </div>
 
-              {acceptedOrders.length === 0 ? (
+              {acceptedOrders.length ===
+              0 ? (
                 <p style={styles.greyText}>
                   No current orders.
                 </p>
               ) : (
-                acceptedOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    style={styles.currentOrder}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 20 }}>
-                        {order.orderNumber}
-                      </strong>
+                acceptedOrders.map(
+                  (order) => (
+                    <div
+                      key={order.id}
+                      style={
+                        styles.currentOrder
+                      }
+                    >
+                      <div>
+                        <strong
+                          style={{
+                            fontSize: 20,
+                          }}
+                        >
+                          {
+                            order.orderNumber
+                          }
+                        </strong>
 
-                      <div style={styles.greyText}>
-                        {order.customer}
+                        <div
+                          style={
+                            styles.greyText
+                          }
+                        >
+                          {money(order.total)}
+                        </div>
                       </div>
-                    </div>
 
-                    <span style={styles.acceptedBadge}>
-                      ACCEPTED
-                    </span>
-                  </div>
-                ))
+                      <span
+                        style={
+                          styles.acceptedBadge
+                        }
+                      >
+                        ACCEPTED
+                      </span>
+                    </div>
+                  ),
+                )
               )}
             </section>
           </>
@@ -543,25 +756,32 @@ export default function RestaurantDashboard() {
 
         {activeTab === "payments" && (
           <>
-            <section style={styles.pageHeading}>
+            <section
+              style={styles.pageHeading}
+            >
               <h2 style={{ margin: 0 }}>
                 Payments
               </h2>
 
               <p style={styles.greyText}>
-                Your Meal Deal Hub earnings and payouts.
+                Your Meal Deal Hub earnings
+                and payouts.
               </p>
             </section>
 
             <div style={styles.grid}>
               <PaymentCard
                 title="MEAL DEAL SALES"
-                value={money(acceptedFoodSales)}
+                value={money(
+                  acceptedFoodSales,
+                )}
               />
 
               <PaymentCard
                 title="DELIVERY"
-                value={money(deliveryIncome)}
+                value={money(
+                  deliveryIncome,
+                )}
               />
 
               <PaymentCard
@@ -571,7 +791,9 @@ export default function RestaurantDashboard() {
 
               <PaymentCard
                 title="YOU RECEIVE"
-                value={money(restaurantEarnings)}
+                value={money(
+                  restaurantEarnings,
+                )}
               />
             </div>
 
@@ -580,23 +802,34 @@ export default function RestaurantDashboard() {
                 NEXT PAYOUT
               </div>
 
-              <div style={styles.payoutAmount}>
-                {money(restaurantEarnings)}
+              <div
+                style={styles.payoutAmount}
+              >
+                {money(
+                  restaurantEarnings,
+                )}
               </div>
 
               <p>
                 Payout period:{" "}
-                <strong>Monday – Sunday</strong>
+                <strong>
+                  Monday – Sunday
+                </strong>
               </p>
 
               <p>
                 Meal Deal Hub commission:{" "}
-                <strong>{money(commission)}</strong>
+                <strong>
+                  {money(commission)}
+                </strong>
               </p>
 
               <p>
-                Service fees retained by Meal Deal Hub:{" "}
-                <strong>{money(serviceFees)}</strong>
+                Service fees retained by Meal
+                Deal Hub:{" "}
+                <strong>
+                  {money(serviceFees)}
+                </strong>
               </p>
             </section>
 
@@ -614,13 +847,16 @@ export default function RestaurantDashboard() {
 
         {activeTab === "account" && (
           <>
-            <section style={styles.pageHeading}>
+            <section
+              style={styles.pageHeading}
+            >
               <h2 style={{ margin: 0 }}>
                 Restaurant Account
               </h2>
 
               <p style={styles.greyText}>
-                Your Meal Deal Hub restaurant account.
+                Your Meal Deal Hub restaurant
+                account.
               </p>
             </section>
 
@@ -632,7 +868,9 @@ export default function RestaurantDashboard() {
 
               <AccountRow
                 label="Restaurant ID"
-                value={restaurant.restaurantId}
+                value={
+                  restaurant.restaurantId
+                }
               />
 
               <AccountRow
@@ -656,8 +894,9 @@ export default function RestaurantDashboard() {
               </h2>
 
               <p>
-                Temporarily stop new Meal Deal Hub orders
-                whenever your restaurant is too busy.
+                Temporarily stop new Meal Deal
+                Hub orders whenever your
+                restaurant is too busy.
               </p>
 
               <Form method="post">
@@ -695,7 +934,8 @@ export default function RestaurantDashboard() {
               </h2>
 
               <p style={styles.greyText}>
-                Sign out of this restaurant terminal.
+                Sign out of this restaurant
+                terminal.
               </p>
 
               <a
@@ -711,7 +951,9 @@ export default function RestaurantDashboard() {
         <nav style={styles.bottomNav}>
           <button
             type="button"
-            onClick={() => setActiveTab("orders")}
+            onClick={() =>
+              setActiveTab("orders")
+            }
             style={
               activeTab === "orders"
                 ? styles.activeNav
@@ -723,7 +965,9 @@ export default function RestaurantDashboard() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("payments")}
+            onClick={() =>
+              setActiveTab("payments")
+            }
             style={
               activeTab === "payments"
                 ? styles.activeNav
@@ -735,7 +979,9 @@ export default function RestaurantDashboard() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("account")}
+            onClick={() =>
+              setActiveTab("account")
+            }
             style={
               activeTab === "account"
                 ? styles.activeNav
@@ -780,7 +1026,8 @@ const styles = {
   page: {
     minHeight: "100vh",
     background: "#f4f4f4",
-    fontFamily: "Arial, Helvetica, sans-serif",
+    fontFamily:
+      "Arial, Helvetica, sans-serif",
     color: "#171717",
     padding: 20,
   },
@@ -1101,7 +1348,8 @@ const styles = {
     borderRadius: 14,
     padding: 8,
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns:
+      "repeat(3, 1fr)",
     gap: 6,
     position: "sticky",
     bottom: 10,
