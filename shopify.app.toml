@@ -2,7 +2,7 @@
 
 client_id = "0bc5001e42cf241ee38149e11479403c"
 name = "Meal Deal Hub Dashboard"
-application_url = "https://program-fragrance-thought-recipe.trycloudflare.com"
+application_url = "https://meal-deal-hub-dashboard.onrender.com"
 embedded = true
 
 [build]
