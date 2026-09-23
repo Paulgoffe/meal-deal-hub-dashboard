@@ -1,6 +1,6 @@
 import "@shopify/shopify-app-react-router/adapters/node";
 import {
-  ApiVersion,
+  ApiVersion, LogSeverity,
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
@@ -8,6 +8,7 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 
 const shopify = shopifyApp({
+  logger: { level: LogSeverity.Debug },
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.July26,

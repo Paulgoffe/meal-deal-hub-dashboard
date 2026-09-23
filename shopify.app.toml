@@ -25,7 +25,7 @@ scopes = "read_orders,write_metaobject_definitions,write_metaobjects,write_produ
 
 [auth]
 redirect_urls = [
-  "https://program-fragrance-thought-recipe.trycloudflare.com/api/auth"
+  "https://meal-deal-hub-dashboard.onrender.com/api/auth"
 ]
 
 [product.metafields.app.demo_info]
