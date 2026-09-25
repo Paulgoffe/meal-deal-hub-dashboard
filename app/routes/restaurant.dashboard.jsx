@@ -134,19 +134,6 @@ async function getShopifyOrders(restaurantId) {
       bite-pfyaja4s.myshopify.com
     */
 
-    const offlineSession =
-      await shopify.sessionStorage.loadSession(
-        `offline_${SHOP_DOMAIN}`,
-      );
-
-    if (!offlineSession?.accessToken) {
-      console.error(
-        "Meal Deal Hub: Shopify offline session not found.",
-      );
-
-      return [];
-    }
-
     const { admin } = await shopify.unauthenticated.admin(SHOP_DOMAIN);
 
     const response = await admin.graphql(`
