@@ -147,11 +147,9 @@ async function getShopifyOrders(restaurantId) {
       return [];
     }
 
-    const client = new shopify.api.clients.Graphql({
-      session: offlineSession,
-    });
+    const { admin } = await shopify.unauthenticated.admin(SHOP_DOMAIN);
 
-    const response = await client.request(`
+    const response = await admin.graphql(`
       query RestaurantOrders {
         orders(
           first: 50
