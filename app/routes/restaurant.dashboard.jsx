@@ -10,7 +10,7 @@ import db from "../db.server";
 import shopify from "../shopify.server";
 
 const COOKIE_NAME = "mdh_restaurant_session";
-const SHOP_DOMAIN = "mealdealhub.myshopify.com";
+const SHOP_DOMAIN = "bite-pfyaja4s.myshopify.com";
 
 function getSessionSecret() {
   return (
@@ -130,7 +130,7 @@ async function getShopifyOrders(restaurantId) {
       installed shop's offline session in Prisma.
 
       For an offline session the shop is:
-      mealdealhub.myshopify.com
+      bite-pfyaja4s.myshopify.com
     */
 
     const offlineSession =
