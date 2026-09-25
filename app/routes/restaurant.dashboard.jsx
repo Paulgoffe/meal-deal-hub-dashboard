@@ -3,6 +3,7 @@ import {
   redirect,
   useLoaderData,
   useNavigation,
+  useRevalidator,
 } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import crypto from "node:crypto";
@@ -347,6 +348,15 @@ export default function RestaurantDashboard() {
   } = useLoaderData();
 
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [revalidator]);
 
   const [activeTab, setActiveTab] =
     useState("orders");
