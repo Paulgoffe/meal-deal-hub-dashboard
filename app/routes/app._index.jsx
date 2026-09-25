@@ -3,6 +3,7 @@ import {
   useActionData,
   useLoaderData,
   useNavigation,
+  useRevalidator,
 } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { authenticate } from "../shopify.server";
@@ -328,6 +329,15 @@ export default function Index() {
 
   const actionData = useActionData();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [revalidator]);
 
   const [soundEnabled, setSoundEnabled] =
     useState(false);
