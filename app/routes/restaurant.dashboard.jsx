@@ -178,8 +178,10 @@ async function getShopifyOrders(restaurantId) {
       }
     `);
 
+    const result = await response.json();
+
     const nodes =
-      response?.data?.orders?.nodes || [];
+      result.data?.orders?.nodes || [];
 
     return nodes
       .map((order) => {
