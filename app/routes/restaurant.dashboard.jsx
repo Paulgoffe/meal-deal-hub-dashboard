@@ -1,6 +1,7 @@
 import {
   Form,
   redirect,
+  useFetcher,
   useLoaderData,
   useNavigation,
   useRevalidator,
@@ -336,6 +337,7 @@ export default function RestaurantDashboard() {
 
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const orderFetcher = useFetcher();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -465,16 +467,35 @@ export default function RestaurantDashboard() {
   }, [newOrders.length, soundEnabled]);
 
   function updateOrder(id, status) {
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === id &&
-        order.restaurantId ===
-          restaurant.restaurantId
-          ? { ...order, status }
-          : order,
-      ),
-    );
-  }
+  const order = orders.find(
+    (item) =>
+      item.id === id &&
+      item.restaurantId === restaurant.restaurantId,
+  );
+
+  if (!order) return;
+
+  orderFetcher.submit(
+    {
+      intent:
+        status === "accepted"
+          ? "accept-order"
+          : "reject-order",
+      shopifyOrderId: order.id,
+      orderNumber: order.orderNumber,
+    },
+    { method: "post" },
+  );
+
+  setOrders((current) =>
+    current.map((item) =>
+      item.id === id &&
+      item.restaurantId === restaurant.restaurantId
+        ? { ...item, status }
+        : item,
+    ),
+  );
+}
 
   const acceptedFoodSales =
     acceptedOrders.reduce(
