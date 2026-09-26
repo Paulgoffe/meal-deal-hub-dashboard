@@ -299,6 +299,13 @@ export async function action({ request }) {
   const intent = String(
     formData.get("intent") || "",
   );
+  console.log("ORDER ACTION RECEIVED:", {
+  intent,
+  shopifyOrderId: formData.get("shopifyOrderId"),
+  orderNumber: formData.get("orderNumber"),
+  restaurantDbId: user.restaurant.id,
+  restaurantId: user.restaurant.restaurantId,
+});
 
     if (
     intent === "accept-order" ||
