@@ -693,35 +693,55 @@ export default function RestaurantDashboard() {
                 </div>
 
                 <div style={styles.actions}>
-                  <button
-                    type="button"
-                    style={
-                      styles.acceptButton
-                    }
-                    onClick={() =>
-                      updateOrder(
-                        firstNewOrder.id,
-                        "accepted",
-                      )
-                    }
-                  >
-                    ✓ ACCEPT ORDER
-                  </button>
+                  
+<orderFetcher.Form method="post">
+  <input
+    type="hidden"
+    name="intent"
+    value="accept-order"
+  />
+  <input
+    type="hidden"
+    name="shopifyOrderId"
+    value={firstNewOrder.id}
+  />
+  <input
+    type="hidden"
+    name="orderNumber"
+    value={firstNewOrder.orderNumber}
+  />
 
-                  <button
-                    type="button"
-                    style={
-                      styles.rejectButton
-                    }
-                    onClick={() =>
-                      updateOrder(
-                        firstNewOrder.id,
-                        "rejected",
-                      )
-                    }
-                  >
-                    ✕ REJECT ORDER
-                  </button>
+  <button
+    type="submit"
+    style={styles.acceptButton}
+  >
+    ✓ ACCEPT ORDER
+  </button>
+</orderFetcher.Form>
+    <orderFetcher.Form method="post">
+  <input
+    type="hidden"
+    name="intent"
+    value="reject-order"
+  />
+  <input
+    type="hidden"
+    name="shopifyOrderId"
+    value={firstNewOrder.id}
+  />
+  <input
+    type="hidden"
+    name="orderNumber"
+    value={firstNewOrder.orderNumber}
+  />
+
+  <button
+    type="submit"
+    style={styles.rejectButton}
+  >
+    × REJECT ORDER
+  </button>
+</orderFetcher.Form>
                 </div>
               </section>
             ) : (
