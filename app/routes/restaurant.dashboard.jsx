@@ -267,6 +267,23 @@ export async function loader({ request }) {
   const orders = await getShopifyOrders(
     user.restaurant.restaurantId,
   );
+  const decisions = await db.orderDecision.findMany({
+  where: {
+    restaurantId: user.restaurant.id,
+  },
+});
+
+const decisionMap = new Map(
+  decisions.map((decision) => [
+    decision.shopifyOrderId,
+    decision.status,
+  ]),
+);
+
+const ordersWithDecisions = orders.map((order) => ({
+  ...order,
+  status: decisionMap.get(order.id) || order.status,
+}));
 
   return {
     user: {
@@ -284,7 +301,7 @@ export async function loader({ request }) {
         user.restaurant.acceptingOrders,
     },
 
-    orders,
+    orders: ordersWithDecisions,
   };
 }
 
