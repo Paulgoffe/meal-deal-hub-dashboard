@@ -635,15 +635,14 @@ export default function Index() {
                     }
                   />
 
-                  <s-button
-                    type="submit"
-                    variant="primary"
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting
-                      ? "SAVING..."
-                      : "ACCEPT ORDER"}
-                  </s-button>
+                  <button
+  type="submit"
+  disabled={isSubmitting}
+>
+  {isSubmitting
+    ? "SAVING..."
+    : "ACCEPT ORDER"}
+</button>
                 </orderFetcher.Form>
 
                 <Form method="post">
