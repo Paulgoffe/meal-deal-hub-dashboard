@@ -148,6 +148,22 @@ async function getShopifyOrders(restaurantId) {
             name
             createdAt
             displayFinancialStatus
+            customer {
+  firstName
+  lastName
+  phone
+}
+
+shippingAddress {
+  firstName
+  lastName
+  address1
+  address2
+  city
+  province
+  zip
+  phone
+}
 
             currentTotalPriceSet {
               shopMoney {
@@ -214,7 +230,29 @@ async function getShopifyOrders(restaurantId) {
           restaurantId,
           time: londonTime(order.createdAt),
 
-          customer: "Customer",
+          customer:
+  [order.customer?.firstName, order.customer?.lastName]
+    .filter(Boolean)
+    .join(" ") ||
+  [order.shippingAddress?.firstName, order.shippingAddress?.lastName]
+    .filter(Boolean)
+    .join(" ") ||
+  "Customer",
+
+phone:
+  order.shippingAddress?.phone ||
+  order.customer?.phone ||
+  "",
+
+address: [
+  order.shippingAddress?.address1,
+  order.shippingAddress?.address2,
+  order.shippingAddress?.city,
+  order.shippingAddress?.province,
+  order.shippingAddress?.zip,
+]
+  .filter(Boolean)
+  .join(", "),
 
           items: matchingItems.map((item) => ({
             name: item.name,
@@ -710,13 +748,21 @@ export default function RestaurantDashboard() {
                 </div>
 
                 <p style={styles.customer}>
-                  Shopify order:{" "}
+                 Order:{" "}
                   <strong>
                     {
                       firstNewOrder.orderNumber
                     }
                   </strong>
                 </p>
+
+                <div style={{ marginBottom: "20px", lineHeight: "1.5" }}>
+  <strong>Customer:</strong> {firstNewOrder.customer}
+  <br />
+  <strong>Address:</strong> {firstNewOrder.address || "No address provided"}
+  <br />
+  <strong>Phone:</strong> {firstNewOrder.phone || "No phone provided"}
+</div>
 
                 <div style={styles.items}>
                   {firstNewOrder.items.map(
