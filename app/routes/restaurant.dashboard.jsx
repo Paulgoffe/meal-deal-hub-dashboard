@@ -740,6 +740,34 @@ export default function RestaurantDashboard() {
                   </strong>
                 </p>
 
+<div style={{ marginBottom: "16px", lineHeight: "1.5" }}>
+  <div>
+    <strong>Customer:</strong>{" "}
+    {firstNewOrder.customer || "Customer"}
+  </div>
+
+  {firstNewOrder.customerPhone && (
+    <div>
+      <strong>Phone:</strong>{" "}
+      {firstNewOrder.customerPhone}
+    </div>
+  )}
+
+  {firstNewOrder.customerEmail && (
+    <div>
+      <strong>Email:</strong>{" "}
+      {firstNewOrder.customerEmail}
+    </div>
+  )}
+
+  {firstNewOrder.customerAddress && (
+    <div>
+      <strong>Delivery address:</strong>{" "}
+      {firstNewOrder.customerAddress}
+    </div>
+  )}
+</div>
+
                 <div style={styles.items}>
                   {firstNewOrder.items.map(
                     (item, index) => (
