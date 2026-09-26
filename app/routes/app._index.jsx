@@ -273,6 +273,14 @@ export async function action({ request }) {
 
   const shopifyOrder =
     verifyResult.data?.order;
+    console.log("ORDER VERIFY:", {
+  shopifyOrderId,
+  orderNumber,
+  restaurantExpected: RESTAURANT.id,
+  restaurantFound: shopifyOrder
+    ? getOrderRestaurantId(shopifyOrder)
+    : "NO ORDER",
+});
 
   if (
     !shopifyOrder ||
