@@ -300,6 +300,56 @@ export async function action({ request }) {
     formData.get("intent") || "",
   );
 
+    if (
+    intent === "accept-order" ||
+    intent === "reject-order"
+  ) {
+    const shopifyOrderId = String(
+      formData.get("shopifyOrderId") || "",
+    );
+
+    const orderNumber = String(
+      formData.get("orderNumber") || "",
+    );
+
+    if (!shopifyOrderId || !orderNumber) {
+      return {
+        success: false,
+        message: "Order information is missing.",
+      };
+    }
+
+    const status =
+      intent === "accept-order"
+        ? "accepted"
+        : "rejected";
+
+    await db.orderDecision.upsert({
+      where: {
+        shopifyOrderId_restaurantId: {
+          shopifyOrderId,
+          restaurantId: user.restaurant.id,
+        },
+      },
+      update: {
+        status,
+        orderNumber,
+        decidedAt: new Date(),
+      },
+      create: {
+        shopifyOrderId,
+        orderNumber,
+        restaurantId: user.restaurant.id,
+        status,
+      },
+    });
+
+    return {
+      success: true,
+      orderNumber,
+      status,
+    };
+  }
   if (intent === "pause-orders") {
     await db.restaurant.update({
       where: { id: user.restaurant.id },
