@@ -200,6 +200,8 @@ shippingAddress {
 
     const nodes =
       result.data?.orders?.nodes || [];
+      
+      console.log("SHOPIFY ORDERS FOUND:", nodes.length);
 
     return nodes
       .map((order) => {
