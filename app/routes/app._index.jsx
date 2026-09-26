@@ -1,6 +1,7 @@
 import {
   Form,
   useActionData,
+  useFetcher,
   useLoaderData,
   useNavigation,
   useRevalidator,
@@ -338,6 +339,7 @@ export default function Index() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const orderFetcher = useFetcher();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -612,7 +614,7 @@ export default function Index() {
                 direction="inline"
                 gap="base"
               >
-                <Form method="post">
+                <orderFetcher.Form method="post">
                   <input
                     type="hidden"
                     name="intent"
@@ -642,7 +644,7 @@ export default function Index() {
                       ? "SAVING..."
                       : "ACCEPT ORDER"}
                   </s-button>
-                </Form>
+                </orderFetcher.Form>
 
                 <Form method="post">
                   <input
