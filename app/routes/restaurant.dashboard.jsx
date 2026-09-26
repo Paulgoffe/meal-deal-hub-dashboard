@@ -1,7 +1,6 @@
 import {
   Form,
   redirect,
-  useFetcher,
   useLoaderData,
   useNavigation,
   useRevalidator,
@@ -148,22 +147,6 @@ async function getShopifyOrders(restaurantId) {
             name
             createdAt
             displayFinancialStatus
-            customer {
-  firstName
-  lastName
-  phone
-}
-
-shippingAddress {
-  firstName
-  lastName
-  address1
-  address2
-  city
-  province
-  zip
-  phone
-}
 
             currentTotalPriceSet {
               shopMoney {
@@ -230,29 +213,7 @@ shippingAddress {
           restaurantId,
           time: londonTime(order.createdAt),
 
-          customer:
-  [order.customer?.firstName, order.customer?.lastName]
-    .filter(Boolean)
-    .join(" ") ||
-  [order.shippingAddress?.firstName, order.shippingAddress?.lastName]
-    .filter(Boolean)
-    .join(" ") ||
-  "Customer",
-
-phone:
-  order.shippingAddress?.phone ||
-  order.customer?.phone ||
-  "",
-
-address: [
-  order.shippingAddress?.address1,
-  order.shippingAddress?.address2,
-  order.shippingAddress?.city,
-  order.shippingAddress?.province,
-  order.shippingAddress?.zip,
-]
-  .filter(Boolean)
-  .join(", "),
+          customer: "Customer",
 
           items: matchingItems.map((item) => ({
             name: item.name,
@@ -306,30 +267,6 @@ export async function loader({ request }) {
     user.restaurant.restaurantId,
   );
 
-
-    const decisions =
-    await db.orderDecision.findMany({
-      where: {
-        restaurantId: user.restaurant.id,
-      },
-    });
-
-  const decisionMap = new Map(
-    decisions.map((decision) => [
-      decision.shopifyOrderId,
-      decision.status,
-    ]),
-  );
-
-  const ordersWithDecisions = orders.map(
-    (order) => ({
-      ...order,
-      status:
-        decisionMap.get(order.id) ||
-        order.status,
-    }),
-  );
-
   return {
     user: {
       email: user.email,
@@ -346,7 +283,7 @@ export async function loader({ request }) {
         user.restaurant.acceptingOrders,
     },
 
-    orders: ordersWithDecisions,
+    orders,
   };
 }
 
@@ -362,56 +299,6 @@ export async function action({ request }) {
     formData.get("intent") || "",
   );
 
-    if (
-    intent === "accept-order" ||
-    intent === "reject-order"
-  ) {
-    const shopifyOrderId = String(
-      formData.get("shopifyOrderId") || "",
-    );
-
-    const orderNumber = String(
-      formData.get("orderNumber") || "",
-    );
-
-    if (!shopifyOrderId || !orderNumber) {
-      return {
-        success: false,
-        message: "Order information is missing.",
-      };
-    }
-
-    const status =
-      intent === "accept-order"
-        ? "accepted"
-        : "rejected";
-
-    await db.orderDecision.upsert({
-      where: {
-        shopifyOrderId_restaurantId: {
-          shopifyOrderId,
-          restaurantId: user.restaurant.id,
-        },
-      },
-      update: {
-        status,
-        orderNumber,
-        decidedAt: new Date(),
-      },
-      create: {
-        shopifyOrderId,
-        orderNumber,
-        restaurantId: user.restaurant.id,
-        status,
-      },
-    });
-
-    return {
-      success: true,
-      orderNumber,
-      status,
-    };
-  }
   if (intent === "pause-orders") {
     await db.restaurant.update({
       where: { id: user.restaurant.id },
@@ -448,7 +335,6 @@ export default function RestaurantDashboard() {
   } = useLoaderData();
 
   const navigation = useNavigation();
-  const orderFetcher = useFetcher();
   const revalidator = useRevalidator();
 
   useEffect(() => {
@@ -579,34 +465,16 @@ export default function RestaurantDashboard() {
   }, [newOrders.length, soundEnabled]);
 
   function updateOrder(id, status) {
-  const order = orders.find(
-    (item) => item.id === id,
-  );
-
-  if (!order) return;
-
-  setOrders((current) =>
-    current.map((item) =>
-      item.id === id
-        ? { ...item, status }
-        : item,
-    ),
-  );
-
-  orderFetcher.submit(
-    {
-      intent:
-        status === "accepted"
-          ? "accept-order"
-          : "reject-order",
-      shopifyOrderId: order.id,
-      orderNumber: order.orderNumber,
-    },
-    {
-      method: "post",
-    },
-  );
-}
+    setOrders((current) =>
+      current.map((order) =>
+        order.id === id &&
+        order.restaurantId ===
+          restaurant.restaurantId
+          ? { ...order, status }
+          : order,
+      ),
+    );
+  }
 
   const acceptedFoodSales =
     acceptedOrders.reduce(
@@ -748,21 +616,13 @@ export default function RestaurantDashboard() {
                 </div>
 
                 <p style={styles.customer}>
-                 Order:{" "}
+                  Shopify order:{" "}
                   <strong>
                     {
                       firstNewOrder.orderNumber
                     }
                   </strong>
                 </p>
-
-                <div style={{ marginBottom: "20px", lineHeight: "1.5" }}>
-  <strong>Customer:</strong> {firstNewOrder.customer}
-  <br />
-  <strong>Address:</strong> {firstNewOrder.address || "No address provided"}
-  <br />
-  <strong>Phone:</strong> {firstNewOrder.phone || "No phone provided"}
-</div>
 
                 <div style={styles.items}>
                   {firstNewOrder.items.map(
