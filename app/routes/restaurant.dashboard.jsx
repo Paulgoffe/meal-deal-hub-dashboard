@@ -200,11 +200,20 @@ shippingAddress {
 
     const nodes =
       result.data?.orders?.nodes || [];
-      
+
       console.log("SHOPIFY ORDERS FOUND:", nodes.length);
 
     return nodes
       .map((order) => {
+        console.log(
+  "ORDER RESTAURANT IDS:",
+  order.name,
+  order.lineItems.nodes.map((item) =>
+    getAttribute(item.customAttributes, "_Restaurant ID")
+  ),
+  "LOOKING FOR:",
+  restaurantId
+);
         const matchingItems = order.lineItems.nodes.filter(
           (item) =>
             getAttribute(
