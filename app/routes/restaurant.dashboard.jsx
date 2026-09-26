@@ -148,6 +148,23 @@ async function getShopifyOrders(restaurantId) {
             name
             createdAt
             displayFinancialStatus
+            customer {
+  firstName
+  lastName
+  email
+  phone
+}
+
+shippingAddress {
+  firstName
+  lastName
+  address1
+  address2
+  city
+  province
+  zip
+  phone
+}
 
             currentTotalPriceSet {
               shopMoney {
@@ -214,7 +231,30 @@ async function getShopifyOrders(restaurantId) {
           restaurantId,
           time: londonTime(order.createdAt),
 
-          customer: "Customer",
+          customer:
+  [order.customer?.firstName, order.customer?.lastName]
+    .filter(Boolean)
+    .join(" ") ||
+  [order.shippingAddress?.firstName, order.shippingAddress?.lastName]
+    .filter(Boolean)
+    .join(" ") ||
+  "Customer",
+
+customerEmail: order.customer?.email || "",
+customerPhone:
+  order.customer?.phone ||
+  order.shippingAddress?.phone ||
+  "",
+
+customerAddress: [
+  order.shippingAddress?.address1,
+  order.shippingAddress?.address2,
+  order.shippingAddress?.city,
+  order.shippingAddress?.province,
+  order.shippingAddress?.zip,
+]
+  .filter(Boolean)
+  .join(", "),
 
           items: matchingItems.map((item) => ({
             name: item.name,
