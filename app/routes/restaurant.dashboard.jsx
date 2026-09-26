@@ -523,36 +523,6 @@ export default function RestaurantDashboard() {
     return () => stopAlarm();
   }, [newOrders.length, soundEnabled]);
 
-  function updateOrder(id, status) {
-  const order = orders.find(
-    (item) =>
-      item.id === id &&
-      item.restaurantId === restaurant.restaurantId,
-  );
-
-  if (!order) return;
-
-  orderFetcher.submit(
-    {
-      intent:
-        status === "accepted"
-          ? "accept-order"
-          : "reject-order",
-      shopifyOrderId: order.id,
-      orderNumber: order.orderNumber,
-    },
-    { method: "post" },
-  );
-
-  setOrders((current) =>
-    current.map((item) =>
-      item.id === id &&
-      item.restaurantId === restaurant.restaurantId
-        ? { ...item, status }
-        : item,
-    ),
-  );
-}
 
   const acceptedFoodSales =
     acceptedOrders.reduce(
