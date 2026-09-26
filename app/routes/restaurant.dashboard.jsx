@@ -239,6 +239,7 @@ shippingAddress {
         return {
           id: order.id,
           orderNumber: order.name,
+          createdAt: order.createdAt,
           restaurantId,
           time: londonTime(order.createdAt),
 
@@ -293,7 +294,7 @@ customerAddress: [
 
           financialStatus:
             order.displayFinancialStatus,
-
+createdAt: order.createdAt,
           status: "new",
         };
       })
@@ -330,11 +331,27 @@ const decisionMap = new Map(
     decision.status,
   ]),
 );
+const ORDER_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const now = Date.now();
+const ordersWithDecisions = orders
+  .filter((order) => {
+    const savedStatus = decisionMap.get(order.id);
 
-const ordersWithDecisions = orders.map((order) => ({
-  ...order,
-  status: decisionMap.get(order.id) || order.status,
-}));
+    if (savedStatus) return true;
+
+    return (
+      order.createdAt &&
+      now - new Date(order.createdAt).getTime() <= ORDER_MAX_AGE_MS
+    );
+  })
+  .map((order) => {
+  const savedStatus = decisionMap.get(order.id);
+
+  return {
+    ...order,
+    status: savedStatus || order.status,
+  };
+});
 
   return {
     user: {
