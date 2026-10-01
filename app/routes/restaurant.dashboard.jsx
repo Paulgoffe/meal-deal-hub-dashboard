@@ -127,15 +127,10 @@ function londonTime(dateString) {
 
 async function getShopifyOrders(restaurantId) {
   try {
-    /*
-      The Shopify React Router template stores the
-      installed shop's offline session in Prisma.
-
-      For an offline session the shop is:
-      bite-pfyaja4s.myshopify.com
-    */
-
-    const { admin } = await shopify.unauthenticated.admin(SHOP_DOMAIN);
+    const { admin } =
+      await shopify.unauthenticated.admin(
+        SHOP_DOMAIN,
+      );
 
     const response = await admin.graphql(`
       query RestaurantOrders {
@@ -148,25 +143,33 @@ async function getShopifyOrders(restaurantId) {
             name
             createdAt
             displayFinancialStatus
-            customer {
-  firstName
-  lastName
-  email
-  phone
-}
 
-shippingAddress {
-  firstName
-  lastName
-  address1
-  address2
-  city
-  province
-  zip
-  phone
-}
+            customer {
+              firstName
+              lastName
+              email
+              phone
+            }
+
+            shippingAddress {
+              firstName
+              lastName
+              address1
+              address2
+              city
+              province
+              zip
+              phone
+            }
 
             currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+
+            currentShippingPriceSet {
               shopMoney {
                 amount
                 currencyCode
@@ -201,26 +204,34 @@ shippingAddress {
     const nodes =
       result.data?.orders?.nodes || [];
 
-      console.log("SHOPIFY ORDERS FOUND:", nodes.length);
+    console.log(
+      "SHOPIFY ORDERS FOUND:",
+      nodes.length,
+    );
 
     return nodes
       .map((order) => {
         console.log(
-  "ORDER RESTAURANT IDS:",
-  order.name,
-  order.lineItems.nodes.map((item) =>
-    getAttribute(item.customAttributes, "_Restaurant ID")
-  ),
-  "LOOKING FOR:",
-  restaurantId
-);
-        const matchingItems = order.lineItems.nodes.filter(
-          (item) =>
+          "ORDER RESTAURANT IDS:",
+          order.name,
+          order.lineItems.nodes.map((item) =>
             getAttribute(
               item.customAttributes,
               "_Restaurant ID",
-            ) === restaurantId,
+            ),
+          ),
+          "LOOKING FOR:",
+          restaurantId,
         );
+
+        const matchingItems =
+          order.lineItems.nodes.filter(
+            (item) =>
+              getAttribute(
+                item.customAttributes,
+                "_Restaurant ID",
+              ) === restaurantId,
+          );
 
         if (matchingItems.length === 0) {
           return null;
@@ -230,8 +241,8 @@ shippingAddress {
           (total, item) =>
             total +
             Number(
-              item.originalTotalSet?.shopMoney?.amount ||
-                0,
+              item.originalTotalSet?.shopMoney
+                ?.amount || 0,
             ),
           0,
         );
@@ -244,29 +255,37 @@ shippingAddress {
           time: londonTime(order.createdAt),
 
           customer:
-  [order.customer?.firstName, order.customer?.lastName]
-    .filter(Boolean)
-    .join(" ") ||
-  [order.shippingAddress?.firstName, order.shippingAddress?.lastName]
-    .filter(Boolean)
-    .join(" ") ||
-  "Customer",
+            [
+              order.customer?.firstName,
+              order.customer?.lastName,
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            [
+              order.shippingAddress?.firstName,
+              order.shippingAddress?.lastName,
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            "Customer",
 
-customerEmail: order.customer?.email || "",
-customerPhone:
-  order.customer?.phone ||
-  order.shippingAddress?.phone ||
-  "",
+          customerEmail:
+            order.customer?.email || "",
 
-customerAddress: [
-  order.shippingAddress?.address1,
-  order.shippingAddress?.address2,
-  order.shippingAddress?.city,
-  order.shippingAddress?.province,
-  order.shippingAddress?.zip,
-]
-  .filter(Boolean)
-  .join(", "),
+          customerPhone:
+            order.customer?.phone ||
+            order.shippingAddress?.phone ||
+            "",
+
+          customerAddress: [
+            order.shippingAddress?.address1,
+            order.shippingAddress?.address2,
+            order.shippingAddress?.city,
+            order.shippingAddress?.province,
+            order.shippingAddress?.zip,
+          ]
+            .filter(Boolean)
+            .join(", "),
 
           items: matchingItems.map((item) => ({
             name: item.name,
@@ -276,12 +295,12 @@ customerAddress: [
           foodTotal,
 
           /*
-            Delivery and service-fee breakdown will
-            be connected separately once we read the
-            actual Shopify shipping/fee data.
+            We are now reading Shopify's real
+            shipping amount in the GraphQL query.
 
-            For now the Shopify order total displayed
-            is the real amount paid.
+            We will connect that value to the
+            restaurant delivery calculation after
+            confirming Shopify returns it correctly.
           */
 
           delivery: 0,
@@ -294,7 +313,7 @@ customerAddress: [
 
           financialStatus:
             order.displayFinancialStatus,
-createdAt: order.createdAt,
+
           status: "new",
         };
       })
@@ -310,7 +329,8 @@ createdAt: order.createdAt,
 }
 
 export async function loader({ request }) {
-  const user = await getAuthenticatedUser(request);
+  const user =
+    await getAuthenticatedUser(request);
 
   if (!user) {
     throw redirect("/restaurant/login");
@@ -319,39 +339,52 @@ export async function loader({ request }) {
   const orders = await getShopifyOrders(
     user.restaurant.restaurantId,
   );
-  const decisions = await db.orderDecision.findMany({
-  where: {
-    restaurantId: user.restaurant.id,
-  },
-});
 
-const decisionMap = new Map(
-  decisions.map((decision) => [
-    decision.shopifyOrderId,
-    decision.status,
-  ]),
-);
-const ORDER_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
-const now = Date.now();
-const ordersWithDecisions = orders
-  .filter((order) => {
-    const savedStatus = decisionMap.get(order.id);
+  const decisions =
+    await db.orderDecision.findMany({
+      where: {
+        restaurantId: user.restaurant.id,
+      },
+    });
 
-    if (savedStatus) return true;
+  const decisionMap = new Map(
+    decisions.map((decision) => [
+      decision.shopifyOrderId,
+      decision.status,
+    ]),
+  );
 
-    return (
-      order.createdAt &&
-      now - new Date(order.createdAt).getTime() <= ORDER_MAX_AGE_MS
-    );
-  })
-  .map((order) => {
-  const savedStatus = decisionMap.get(order.id);
+  const ORDER_MAX_AGE_MS =
+    2 * 60 * 60 * 1000;
 
-  return {
-    ...order,
-    status: savedStatus || order.status,
-  };
-});
+  const now = Date.now();
+
+  const ordersWithDecisions = orders
+    .filter((order) => {
+      const savedStatus =
+        decisionMap.get(order.id);
+
+      if (savedStatus) return true;
+
+      return (
+        order.createdAt &&
+        now -
+          new Date(
+            order.createdAt,
+          ).getTime() <=
+          ORDER_MAX_AGE_MS
+      );
+    })
+    .map((order) => {
+      const savedStatus =
+        decisionMap.get(order.id);
+
+      return {
+        ...order,
+        status:
+          savedStatus || order.status,
+      };
+    });
 
   return {
     user: {
@@ -374,25 +407,33 @@ const ordersWithDecisions = orders
 }
 
 export async function action({ request }) {
-  const user = await getAuthenticatedUser(request);
+  const user =
+    await getAuthenticatedUser(request);
 
   if (!user) {
     throw redirect("/restaurant/login");
   }
 
-  const formData = await request.formData();
+  const formData =
+    await request.formData();
+
   const intent = String(
     formData.get("intent") || "",
   );
-  console.log("ORDER ACTION RECEIVED:", {
-  intent,
-  shopifyOrderId: formData.get("shopifyOrderId"),
-  orderNumber: formData.get("orderNumber"),
-  restaurantDbId: user.restaurant.id,
-  restaurantId: user.restaurant.restaurantId,
-});
 
-    if (
+  console.log("ORDER ACTION RECEIVED:", {
+    intent,
+    shopifyOrderId:
+      formData.get("shopifyOrderId"),
+    orderNumber:
+      formData.get("orderNumber"),
+    restaurantDbId:
+      user.restaurant.id,
+    restaurantId:
+      user.restaurant.restaurantId,
+  });
+
+  if (
     intent === "accept-order" ||
     intent === "reject-order"
   ) {
@@ -407,7 +448,8 @@ export async function action({ request }) {
     if (!shopifyOrderId || !orderNumber) {
       return {
         success: false,
-        message: "Order information is missing.",
+        message:
+          "Order information is missing.",
       };
     }
 
@@ -420,18 +462,22 @@ export async function action({ request }) {
       where: {
         shopifyOrderId_restaurantId: {
           shopifyOrderId,
-          restaurantId: user.restaurant.id,
+          restaurantId:
+            user.restaurant.id,
         },
       },
+
       update: {
         status,
         orderNumber,
         decidedAt: new Date(),
       },
+
       create: {
         shopifyOrderId,
         orderNumber,
-        restaurantId: user.restaurant.id,
+        restaurantId:
+          user.restaurant.id,
         status,
       },
     });
@@ -442,10 +488,15 @@ export async function action({ request }) {
       status,
     };
   }
+
   if (intent === "pause-orders") {
     await db.restaurant.update({
-      where: { id: user.restaurant.id },
-      data: { acceptingOrders: false },
+      where: {
+        id: user.restaurant.id,
+      },
+      data: {
+        acceptingOrders: false,
+      },
     });
 
     return { success: true };
@@ -453,8 +504,12 @@ export async function action({ request }) {
 
   if (intent === "resume-orders") {
     await db.restaurant.update({
-      where: { id: user.restaurant.id },
-      data: { acceptingOrders: true },
+      where: {
+        id: user.restaurant.id,
+      },
+      data: {
+        acceptingOrders: true,
+      },
     });
 
     return { success: true };
@@ -486,7 +541,8 @@ export default function RestaurantDashboard() {
       revalidator.revalidate();
     }, 10000);
 
-    return () => clearInterval(interval);
+    return () =>
+      clearInterval(interval);
   }, [revalidator]);
 
   const [activeTab, setActiveTab] =
@@ -505,29 +561,37 @@ export default function RestaurantDashboard() {
     setOrders(shopifyOrders || []);
   }, [shopifyOrders]);
 
-  const restaurantOrders = orders.filter(
-    (order) =>
-      order.restaurantId ===
-      restaurant.restaurantId,
-  );
+  const restaurantOrders =
+    orders.filter(
+      (order) =>
+        order.restaurantId ===
+        restaurant.restaurantId,
+    );
 
-  const newOrders = restaurantOrders.filter(
-    (order) => order.status === "new",
-  );
+  const newOrders =
+    restaurantOrders.filter(
+      (order) =>
+        order.status === "new",
+    );
 
   const acceptedOrders =
     restaurantOrders.filter(
-      (order) => order.status === "accepted",
+      (order) =>
+        order.status === "accepted",
     );
 
-  const firstNewOrder = newOrders[0];
+  const firstNewOrder =
+    newOrders[0];
 
   const isSaving =
     navigation.state === "submitting";
 
   function stopAlarm() {
     if (alarmTimerRef.current) {
-      clearInterval(alarmTimerRef.current);
+      clearInterval(
+        alarmTimerRef.current,
+      );
+
       alarmTimerRef.current = null;
     }
   }
@@ -546,7 +610,9 @@ export default function RestaurantDashboard() {
       const context =
         audioContextRef.current;
 
-      if (context.state === "suspended") {
+      if (
+        context.state === "suspended"
+      ) {
         context.resume();
       }
 
@@ -570,7 +636,9 @@ export default function RestaurantDashboard() {
       );
 
       oscillator.connect(gain);
-      gain.connect(context.destination);
+      gain.connect(
+        context.destination,
+      );
 
       oscillator.start();
 
@@ -606,8 +674,10 @@ export default function RestaurantDashboard() {
     }
 
     return () => stopAlarm();
-  }, [newOrders.length, soundEnabled]);
-
+  }, [
+    newOrders.length,
+    soundEnabled,
+  ]);
 
   const acceptedFoodSales =
     acceptedOrders.reduce(
@@ -647,14 +717,18 @@ export default function RestaurantDashboard() {
             </div>
 
             <h1
-              style={styles.restaurantName}
+              style={
+                styles.restaurantName
+              }
             >
               {restaurant.name}
             </h1>
 
             <div style={styles.location}>
               Restaurant ID:{" "}
-              {restaurant.restaurantId}
+              {
+                restaurant.restaurantId
+              }
             </div>
           </div>
 
@@ -673,7 +747,9 @@ export default function RestaurantDashboard() {
 
         {activeTab === "orders" && (
           <>
-            <section style={styles.controls}>
+            <section
+              style={styles.controls}
+            >
               <Form method="post">
                 <input
                   type="hidden"
@@ -705,28 +781,50 @@ export default function RestaurantDashboard() {
               {!soundEnabled ? (
                 <button
                   type="button"
-                  style={styles.orangeButton}
-                  onClick={enableSound}
+                  style={
+                    styles.orangeButton
+                  }
+                  onClick={
+                    enableSound
+                  }
                 >
                   🔊 ENABLE ORDER SOUND
                 </button>
               ) : (
-                <div style={styles.soundOn}>
+                <div
+                  style={
+                    styles.soundOn
+                  }
+                >
                   🔊 ORDER SOUND ON
                 </div>
               )}
             </section>
 
             {firstNewOrder ? (
-              <section style={styles.newOrder}>
-                <div style={styles.orderTop}>
+              <section
+                style={
+                  styles.newOrder
+                }
+              >
+                <div
+                  style={
+                    styles.orderTop
+                  }
+                >
                   <div>
-                    <div style={styles.newLabel}>
+                    <div
+                      style={
+                        styles.newLabel
+                      }
+                    >
                       🔔 NEW ORDER
                     </div>
 
                     <h2
-                      style={styles.orderNumber}
+                      style={
+                        styles.orderNumber
+                      }
                     >
                       {
                         firstNewOrder.orderNumber
@@ -734,21 +832,31 @@ export default function RestaurantDashboard() {
                     </h2>
 
                     <div
-                      style={styles.greyText}
+                      style={
+                        styles.greyText
+                      }
                     >
                       Received{" "}
-                      {firstNewOrder.time}
+                      {
+                        firstNewOrder.time
+                      }
                     </div>
                   </div>
 
-                  <div style={styles.total}>
+                  <div
+                    style={styles.total}
+                  >
                     {money(
                       firstNewOrder.total,
                     )}
                   </div>
                 </div>
 
-                <p style={styles.customer}>
+                <p
+                  style={
+                    styles.customer
+                  }
+                >
                   Shopify order:{" "}
                   <strong>
                     {
@@ -757,47 +865,75 @@ export default function RestaurantDashboard() {
                   </strong>
                 </p>
 
-<div style={{ marginBottom: "16px", lineHeight: "1.5" }}>
-  <div>
-    <strong>Customer:</strong>{" "}
-    {firstNewOrder.customer || "Customer"}
-  </div>
+                <div
+                  style={{
+                    marginBottom:
+                      "16px",
+                    lineHeight: "1.5",
+                  }}
+                >
+                  <div>
+                    <strong>
+                      Customer:
+                    </strong>{" "}
+                    {firstNewOrder.customer ||
+                      "Customer"}
+                  </div>
 
-  {firstNewOrder.customerPhone && (
-    <div>
-      <strong>Phone:</strong>{" "}
-      {firstNewOrder.customerPhone}
-    </div>
-  )}
+                  {firstNewOrder.customerPhone && (
+                    <div>
+                      <strong>
+                        Phone:
+                      </strong>{" "}
+                      {
+                        firstNewOrder.customerPhone
+                      }
+                    </div>
+                  )}
 
-  {firstNewOrder.customerEmail && (
-    <div>
-      <strong>Email:</strong>{" "}
-      {firstNewOrder.customerEmail}
-    </div>
-  )}
+                  {firstNewOrder.customerEmail && (
+                    <div>
+                      <strong>
+                        Email:
+                      </strong>{" "}
+                      {
+                        firstNewOrder.customerEmail
+                      }
+                    </div>
+                  )}
 
-  {firstNewOrder.customerAddress && (
-    <div>
-      <strong>Delivery address:</strong>{" "}
-      {firstNewOrder.customerAddress}
-    </div>
-  )}
-</div>
+                  {firstNewOrder.customerAddress && (
+                    <div>
+                      <strong>
+                        Delivery address:
+                      </strong>{" "}
+                      {
+                        firstNewOrder.customerAddress
+                      }
+                    </div>
+                  )}
+                </div>
 
-                <div style={styles.items}>
+                <div
+                  style={styles.items}
+                >
                   {firstNewOrder.items.map(
                     (item, index) => (
                       <div
                         key={index}
-                        style={styles.item}
+                        style={
+                          styles.item
+                        }
                       >
                         <span
                           style={
                             styles.quantity
                           }
                         >
-                          {item.quantity} ×
+                          {
+                            item.quantity
+                          }{" "}
+                          ×
                         </span>{" "}
                         {item.name}
                       </div>
@@ -805,87 +941,132 @@ export default function RestaurantDashboard() {
                   )}
                 </div>
 
-                <div style={styles.actions}>
-                  
-<orderFetcher.Form method="post">
-  <input
-    type="hidden"
-    name="intent"
-    value="accept-order"
-  />
-  <input
-    type="hidden"
-    name="shopifyOrderId"
-    value={firstNewOrder.id}
-  />
-  <input
-    type="hidden"
-    name="orderNumber"
-    value={firstNewOrder.orderNumber}
-  />
+                <div
+                  style={
+                    styles.actions
+                  }
+                >
+                  <orderFetcher.Form method="post">
+                    <input
+                      type="hidden"
+                      name="intent"
+                      value="accept-order"
+                    />
 
-  <button
-    type="submit"
-    style={styles.acceptButton}
-  >
-    ✓ ACCEPT ORDER
-  </button>
-</orderFetcher.Form>
-    <orderFetcher.Form method="post">
-  <input
-    type="hidden"
-    name="intent"
-    value="reject-order"
-  />
-  <input
-    type="hidden"
-    name="shopifyOrderId"
-    value={firstNewOrder.id}
-  />
-  <input
-    type="hidden"
-    name="orderNumber"
-    value={firstNewOrder.orderNumber}
-  />
+                    <input
+                      type="hidden"
+                      name="shopifyOrderId"
+                      value={
+                        firstNewOrder.id
+                      }
+                    />
 
-  <button
-    type="submit"
-    style={styles.rejectButton}
-  >
-    × REJECT ORDER
-  </button>
-</orderFetcher.Form>
+                    <input
+                      type="hidden"
+                      name="orderNumber"
+                      value={
+                        firstNewOrder.orderNumber
+                      }
+                    />
+
+                    <button
+                      type="submit"
+                      style={
+                        styles.acceptButton
+                      }
+                    >
+                      ✓ ACCEPT ORDER
+                    </button>
+                  </orderFetcher.Form>
+
+                  <orderFetcher.Form method="post">
+                    <input
+                      type="hidden"
+                      name="intent"
+                      value="reject-order"
+                    />
+
+                    <input
+                      type="hidden"
+                      name="shopifyOrderId"
+                      value={
+                        firstNewOrder.id
+                      }
+                    />
+
+                    <input
+                      type="hidden"
+                      name="orderNumber"
+                      value={
+                        firstNewOrder.orderNumber
+                      }
+                    />
+
+                    <button
+                      type="submit"
+                      style={
+                        styles.rejectButton
+                      }
+                    >
+                      × REJECT ORDER
+                    </button>
+                  </orderFetcher.Form>
                 </div>
               </section>
             ) : (
-              <section style={styles.waiting}>
-                <div style={styles.tick}>
+              <section
+                style={styles.waiting}
+              >
+                <div
+                  style={styles.tick}
+                >
                   ✓
                 </div>
 
-                <h2>No New Orders</h2>
+                <h2>
+                  No New Orders
+                </h2>
 
                 <p>
-                  New orders will appear here
+                  New orders will
+                  appear here
                   automatically.
                 </p>
               </section>
             )}
 
-            <section style={styles.panel}>
-              <div style={styles.titleRow}>
-                <h2 style={{ margin: 0 }}>
+            <section
+              style={styles.panel}
+            >
+              <div
+                style={
+                  styles.titleRow
+                }
+              >
+                <h2
+                  style={{
+                    margin: 0,
+                  }}
+                >
                   Current Orders
                 </h2>
 
-                <span style={styles.count}>
-                  {acceptedOrders.length}
+                <span
+                  style={styles.count}
+                >
+                  {
+                    acceptedOrders.length
+                  }
                 </span>
               </div>
 
               {acceptedOrders.length ===
               0 ? (
-                <p style={styles.greyText}>
+                <p
+                  style={
+                    styles.greyText
+                  }
+                >
                   No current orders.
                 </p>
               ) : (
@@ -900,7 +1081,8 @@ export default function RestaurantDashboard() {
                       <div>
                         <strong
                           style={{
-                            fontSize: 20,
+                            fontSize:
+                              20,
                           }}
                         >
                           {
@@ -913,7 +1095,9 @@ export default function RestaurantDashboard() {
                             styles.greyText
                           }
                         >
-                          {money(order.total)}
+                          {money(
+                            order.total,
+                          )}
                         </div>
                       </div>
 
@@ -932,22 +1116,33 @@ export default function RestaurantDashboard() {
           </>
         )}
 
-        {activeTab === "payments" && (
+        {activeTab ===
+          "payments" && (
           <>
             <section
-              style={styles.pageHeading}
+              style={
+                styles.pageHeading
+              }
             >
-              <h2 style={{ margin: 0 }}>
+              <h2
+                style={{ margin: 0 }}
+              >
                 Payments
               </h2>
 
-              <p style={styles.greyText}>
-                Your Meal Deal Hub earnings
-                and payouts.
+              <p
+                style={
+                  styles.greyText
+                }
+              >
+                Your Meal Deal Hub
+                earnings and payouts.
               </p>
             </section>
 
-            <div style={styles.grid}>
+            <div
+              style={styles.grid}
+            >
               <PaymentCard
                 title="MEAL DEAL SALES"
                 value={money(
@@ -964,7 +1159,9 @@ export default function RestaurantDashboard() {
 
               <PaymentCard
                 title="COMMISSION"
-                value={money(commission)}
+                value={money(
+                  commission,
+                )}
               />
 
               <PaymentCard
@@ -975,13 +1172,21 @@ export default function RestaurantDashboard() {
               />
             </div>
 
-            <section style={styles.payout}>
-              <div style={styles.smallWhite}>
+            <section
+              style={styles.payout}
+            >
+              <div
+                style={
+                  styles.smallWhite
+                }
+              >
                 NEXT PAYOUT
               </div>
 
               <div
-                style={styles.payoutAmount}
+                style={
+                  styles.payoutAmount
+                }
               >
                 {money(
                   restaurantEarnings,
@@ -996,52 +1201,81 @@ export default function RestaurantDashboard() {
               </p>
 
               <p>
-                Meal Deal Hub commission:{" "}
+                Meal Deal Hub
+                commission:{" "}
                 <strong>
-                  {money(commission)}
+                  {money(
+                    commission,
+                  )}
                 </strong>
               </p>
 
               <p>
-                Service fees retained by Meal
-                Deal Hub:{" "}
+                Service fees retained
+                by Meal Deal Hub:{" "}
                 <strong>
-                  {money(serviceFees)}
+                  {money(
+                    serviceFees,
+                  )}
                 </strong>
               </p>
             </section>
 
-            <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
+            <section
+              style={styles.panel}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                }}
+              >
                 Payout History
               </h2>
 
-              <p style={styles.greyText}>
-                No completed payouts yet.
+              <p
+                style={
+                  styles.greyText
+                }
+              >
+                No completed payouts
+                yet.
               </p>
             </section>
           </>
         )}
 
-        {activeTab === "account" && (
+        {activeTab ===
+          "account" && (
           <>
             <section
-              style={styles.pageHeading}
+              style={
+                styles.pageHeading
+              }
             >
-              <h2 style={{ margin: 0 }}>
+              <h2
+                style={{ margin: 0 }}
+              >
                 Restaurant Account
               </h2>
 
-              <p style={styles.greyText}>
-                Your Meal Deal Hub restaurant
-                account.
+              <p
+                style={
+                  styles.greyText
+                }
+              >
+                Your Meal Deal Hub
+                restaurant account.
               </p>
             </section>
 
-            <section style={styles.panel}>
+            <section
+              style={styles.panel}
+            >
               <AccountRow
                 label="Restaurant"
-                value={restaurant.name}
+                value={
+                  restaurant.name
+                }
               />
 
               <AccountRow
@@ -1066,15 +1300,23 @@ export default function RestaurantDashboard() {
               />
             </section>
 
-            <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
+            <section
+              style={styles.panel}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                }}
+              >
                 Order Status
               </h2>
 
               <p>
-                Temporarily stop new Meal Deal
-                Hub orders whenever your
-                restaurant is too busy.
+                Temporarily stop new
+                Meal Deal Hub orders
+                whenever your
+                restaurant is too
+                busy.
               </p>
 
               <Form method="post">
@@ -1106,19 +1348,31 @@ export default function RestaurantDashboard() {
               </Form>
             </section>
 
-            <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
+            <section
+              style={styles.panel}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                }}
+              >
                 Sign Out
               </h2>
 
-              <p style={styles.greyText}>
-                Sign out of this restaurant
-                terminal.
+              <p
+                style={
+                  styles.greyText
+                }
+              >
+                Sign out of this
+                restaurant terminal.
               </p>
 
               <a
                 href="/restaurant/logout"
-                style={styles.logoutButton}
+                style={
+                  styles.logoutButton
+                }
               >
                 LOG OUT
               </a>
@@ -1126,7 +1380,9 @@ export default function RestaurantDashboard() {
           </>
         )}
 
-        <nav style={styles.bottomNav}>
+        <nav
+          style={styles.bottomNav}
+        >
           <button
             type="button"
             onClick={() =>
@@ -1144,10 +1400,13 @@ export default function RestaurantDashboard() {
           <button
             type="button"
             onClick={() =>
-              setActiveTab("payments")
+              setActiveTab(
+                "payments",
+              )
             }
             style={
-              activeTab === "payments"
+              activeTab ===
+              "payments"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -1161,7 +1420,8 @@ export default function RestaurantDashboard() {
               setActiveTab("account")
             }
             style={
-              activeTab === "account"
+              activeTab ===
+              "account"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -1174,24 +1434,38 @@ export default function RestaurantDashboard() {
   );
 }
 
-function PaymentCard({ title, value }) {
+function PaymentCard({
+  title,
+  value,
+}) {
   return (
     <div style={styles.card}>
-      <div style={styles.cardTitle}>
+      <div
+        style={styles.cardTitle}
+      >
         {title}
       </div>
 
-      <div style={styles.cardValue}>
+      <div
+        style={styles.cardValue}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-function AccountRow({ label, value }) {
+function AccountRow({
+  label,
+  value,
+}) {
   return (
-    <div style={styles.accountRow}>
-      <div style={styles.greyText}>
+    <div
+      style={styles.accountRow}
+    >
+      <div
+        style={styles.greyText}
+      >
         {label}
       </div>
 
@@ -1221,7 +1495,8 @@ const styles = {
     borderRadius: 18,
     padding: 24,
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: 20,
     flexWrap: "wrap",
@@ -1300,7 +1575,8 @@ const styles = {
 
   newOrder: {
     background: "#fff",
-    border: "4px solid #f05a28",
+    border:
+      "4px solid #f05a28",
     borderRadius: 18,
     padding: 25,
     marginBottom: 18,
@@ -1308,7 +1584,8 @@ const styles = {
 
   orderTop: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     gap: 20,
     flexWrap: "wrap",
   },
@@ -1374,7 +1651,8 @@ const styles = {
     minHeight: 64,
     background: "#fff",
     color: "#b42318",
-    border: "2px solid #b42318",
+    border:
+      "2px solid #b42318",
     borderRadius: 12,
     fontSize: 18,
     fontWeight: 900,
@@ -1437,10 +1715,12 @@ const styles = {
   },
 
   currentOrder: {
-    borderTop: "1px solid #eee",
+    borderTop:
+      "1px solid #eee",
     padding: "16px 0",
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
   },
 
@@ -1501,9 +1781,11 @@ const styles = {
 
   accountRow: {
     padding: "15px 0",
-    borderBottom: "1px solid #eee",
+    borderBottom:
+      "1px solid #eee",
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     gap: 20,
   },
 
