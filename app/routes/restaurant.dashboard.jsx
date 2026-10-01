@@ -237,22 +237,25 @@ async function getShopifyOrders(restaurantId) {
           return null;
         }
 
-        const foodTotal = matchingItems.reduce(
-          (total, item) =>
-            total +
-            Number(
-              item.originalTotalSet?.shopMoney
-                ?.amount || 0,
-            ),
-          0,
-        );
+        const foodTotal =
+          matchingItems.reduce(
+            (total, item) =>
+              total +
+              Number(
+                item.originalTotalSet
+                  ?.shopMoney?.amount || 0,
+              ),
+            0,
+          );
 
         return {
           id: order.id,
           orderNumber: order.name,
           createdAt: order.createdAt,
           restaurantId,
-          time: londonTime(order.createdAt),
+          time: londonTime(
+            order.createdAt,
+          ),
 
           customer:
             [
@@ -262,8 +265,10 @@ async function getShopifyOrders(restaurantId) {
               .filter(Boolean)
               .join(" ") ||
             [
-              order.shippingAddress?.firstName,
-              order.shippingAddress?.lastName,
+              order.shippingAddress
+                ?.firstName,
+              order.shippingAddress
+                ?.lastName,
             ]
               .filter(Boolean)
               .join(" ") ||
@@ -287,28 +292,25 @@ async function getShopifyOrders(restaurantId) {
             .filter(Boolean)
             .join(", "),
 
-          items: matchingItems.map((item) => ({
-            name: item.name,
-            quantity: item.quantity,
-          })),
+          items: matchingItems.map(
+            (item) => ({
+              name: item.name,
+              quantity: item.quantity,
+            }),
+          ),
 
           foodTotal,
 
-          /*
-            We are now reading Shopify's real
-            shipping amount in the GraphQL query.
+          delivery: Number(
+            order.currentShippingPriceSet
+              ?.shopMoney?.amount || 0,
+          ),
 
-            We will connect that value to the
-            restaurant delivery calculation after
-            confirming Shopify returns it correctly.
-          */
-
-          delivery: 0,
           serviceFee: 0,
 
           total: Number(
-            order.currentTotalPriceSet?.shopMoney
-              ?.amount || 0,
+            order.currentTotalPriceSet
+              ?.shopMoney?.amount || 0,
           ),
 
           financialStatus:
