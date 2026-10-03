@@ -333,6 +333,67 @@ function getShippingLocation(order) {
   );
 }
 
+function getFulfilmentLocationNames(order) {
+  const fulfilmentOrders =
+    order.fulfillmentOrders?.nodes || [];
+
+  return fulfilmentOrders
+    .map(
+      (fulfilmentOrder) =>
+        fulfilmentOrder.assignedLocation
+          ?.location?.name ||
+        fulfilmentOrder.assignedLocation
+          ?.name ||
+        "",
+    )
+    .filter(Boolean);
+}
+
+function getFulfilmentItemsForRestaurant(
+  order,
+  restaurantName,
+) {
+  const fulfilmentOrders =
+    order.fulfillmentOrders?.nodes || [];
+
+  const matchingFulfilmentOrders =
+    fulfilmentOrders.filter(
+      (fulfilmentOrder) => {
+        const locationName =
+          fulfilmentOrder.assignedLocation
+            ?.location?.name ||
+          fulfilmentOrder.assignedLocation
+            ?.name ||
+          "";
+
+        return textMatches(
+          locationName,
+          restaurantName,
+        );
+      },
+    );
+
+  const itemNames = [];
+
+  for (const fulfilmentOrder of matchingFulfilmentOrders) {
+    const lineItems =
+      fulfilmentOrder.lineItems?.nodes || [];
+
+    for (const fulfilmentLineItem of lineItems) {
+      const lineItemName =
+        fulfilmentLineItem.lineItem?.name || "";
+
+      if (lineItemName) {
+        itemNames.push(
+          normaliseText(lineItemName),
+        );
+      }
+    }
+  }
+
+  return itemNames;
+}
+
 async function getShopifyOrders(
   restaurantId,
   restaurantName,
@@ -346,7 +407,7 @@ async function getShopifyOrders(
     const response = await admin.graphql(`
       query RestaurantOrders {
         orders(
-          first: 50
+          first: 100
           sortKey: CREATED_AT
           reverse: true
         ) {
@@ -399,8 +460,36 @@ async function getShopifyOrders(
               }
             }
 
+            fulfillmentOrders(first: 20) {
+              nodes {
+                id
+                status
+
+                assignedLocation {
+                  name
+
+                  location {
+                    id
+                    name
+                  }
+                }
+
+                lineItems(first: 50) {
+                  nodes {
+                    remainingQuantity
+
+                    lineItem {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+
             lineItems(first: 50) {
               nodes {
+                id
                 name
                 quantity
 
@@ -427,7 +516,9 @@ async function getShopifyOrders(
     if (result.errors?.length) {
       console.error(
         "SHOPIFY GRAPHQL ERRORS:",
-        result.errors,
+        JSON.stringify(
+          result.errors,
+        ),
       );
     }
 
@@ -441,8 +532,11 @@ async function getShopifyOrders(
 
     return nodes
       .map((order) => {
+        const allLineItems =
+          order.lineItems?.nodes || [];
+
         const foodItems =
-          order.lineItems.nodes.filter(
+          allLineItems.filter(
             (item) =>
               !isServiceFeeItem(item),
           );
@@ -450,6 +544,12 @@ async function getShopifyOrders(
         if (foodItems.length === 0) {
           return null;
         }
+
+        /*
+         * -------------------------------------------------
+         * 1. RESTAURANT ID MATCHING
+         * -------------------------------------------------
+         */
 
         const foodRestaurantIds =
           foodItems
@@ -461,7 +561,7 @@ async function getShopifyOrders(
             )
             .filter(Boolean);
 
-        const matchingItems =
+        const matchingItemsById =
           foodItems.filter(
             (item) =>
               normaliseText(
@@ -475,8 +575,8 @@ async function getShopifyOrders(
               ),
           );
 
-        const noFoodRestaurantId =
-          foodRestaurantIds.length === 0;
+        const hasExplicitFoodRestaurant =
+          foodRestaurantIds.length > 0;
 
         const orderRestaurantId =
           getAttribute(
@@ -485,16 +585,68 @@ async function getShopifyOrders(
           );
 
         const orderRestaurantMatches =
+          Boolean(orderRestaurantId) &&
           normaliseText(
             orderRestaurantId,
           ) ===
-          normaliseText(
-            restaurantId,
-          );
+            normaliseText(
+              restaurantId,
+            );
 
         const orderHasDifferentRestaurant =
           Boolean(orderRestaurantId) &&
           !orderRestaurantMatches;
+
+        /*
+         * -------------------------------------------------
+         * 2. SHOPIFY FULFILMENT LOCATION MATCHING
+         * -------------------------------------------------
+         *
+         * Shopify can assign an order to a restaurant
+         * location even when the _Restaurant ID property
+         * isn't available on the order.
+         */
+
+        const fulfilmentLocationNames =
+          getFulfilmentLocationNames(
+            order,
+          );
+
+        const matchingFulfilmentLocations =
+          fulfilmentLocationNames.filter(
+            (locationName) =>
+              textMatches(
+                locationName,
+                restaurantName,
+              ),
+          );
+
+        const fulfilmentLocationMatches =
+          matchingFulfilmentLocations.length >
+          0;
+
+        const fulfilmentItemNames =
+          getFulfilmentItemsForRestaurant(
+            order,
+            restaurantName,
+          );
+
+        const matchingItemsByFulfilment =
+          fulfilmentItemNames.length > 0
+            ? foodItems.filter((item) =>
+                fulfilmentItemNames.includes(
+                  normaliseText(
+                    item.name,
+                  ),
+                ),
+              )
+            : [];
+
+        /*
+         * -------------------------------------------------
+         * 3. SHIPPING / PICKUP FALLBACK
+         * -------------------------------------------------
+         */
 
         const orderType =
           getOrderType(order);
@@ -502,23 +654,12 @@ async function getShopifyOrders(
         const shippingLocation =
           getShippingLocation(order);
 
-        let belongsToRestaurant =
-          matchingItems.length > 0;
-
-        const hasExplicitFoodRestaurant =
-          foodRestaurantIds.length > 0;
-
-        if (
-          !hasExplicitFoodRestaurant &&
-          orderRestaurantMatches
-        ) {
-          belongsToRestaurant = true;
-        }
+        const noFoodRestaurantId =
+          foodRestaurantIds.length === 0;
 
         const canUseNameFallback =
           noFoodRestaurantId &&
-          !orderHasDifferentRestaurant &&
-          !orderRestaurantId;
+          !orderHasDifferentRestaurant;
 
         const shippingMatchesRestaurant =
           canUseNameFallback &&
@@ -527,29 +668,41 @@ async function getShopifyOrders(
             restaurantName,
           );
 
-        if (shippingMatchesRestaurant) {
+        /*
+         * -------------------------------------------------
+         * 4. DETERMINE WHETHER ORDER BELONGS HERE
+         * -------------------------------------------------
+         */
+
+        let belongsToRestaurant = false;
+
+        if (
+          matchingItemsById.length > 0
+        ) {
           belongsToRestaurant = true;
-        }
-
-        const foodNameMatchesRestaurant =
-          canUseNameFallback &&
-          foodItems.some((item) =>
-            textMatches(
-              item.name,
-              restaurantName,
-            ),
-          );
-
-        if (foodNameMatchesRestaurant) {
+        } else if (
+          !hasExplicitFoodRestaurant &&
+          orderRestaurantMatches
+        ) {
+          belongsToRestaurant = true;
+        } else if (
+          !hasExplicitFoodRestaurant &&
+          !orderHasDifferentRestaurant &&
+          fulfilmentLocationMatches
+        ) {
+          belongsToRestaurant = true;
+        } else if (
+          !hasExplicitFoodRestaurant &&
+          !orderHasDifferentRestaurant &&
+          shippingMatchesRestaurant
+        ) {
           belongsToRestaurant = true;
         }
 
         /*
-          Keep this debug information on ONE LINE.
-          This makes Render searches for an order
-          number such as #1041 show every matching
-          value without hiding the surrounding data.
-        */
+         * Keep this on one line in Render logs.
+         */
+
         console.log(
           "ORDER MATCH CHECK:",
           JSON.stringify({
@@ -560,14 +713,17 @@ async function getShopifyOrders(
             shippingLocation,
             foodRestaurantIds,
             orderRestaurantId,
-            normalIdMatch:
-              matchingItems.length > 0,
+            fulfilmentLocationNames,
+            matchingFulfilmentLocations,
+            idMatch:
+              matchingItemsById.length >
+              0,
             orderIdMatch:
               orderRestaurantMatches,
+            fulfilmentMatch:
+              fulfilmentLocationMatches,
             shippingMatch:
               shippingMatchesRestaurant,
-            foodNameMatch:
-              foodNameMatchesRestaurant,
             belongsToRestaurant,
           }),
         );
@@ -576,10 +732,35 @@ async function getShopifyOrders(
           return null;
         }
 
-        const restaurantFoodItems =
-          matchingItems.length > 0
-            ? matchingItems
-            : foodItems;
+        /*
+         * -------------------------------------------------
+         * 5. CHOOSE THIS RESTAURANT'S FOOD ITEMS
+         * -------------------------------------------------
+         */
+
+        let restaurantFoodItems = [];
+
+        if (
+          matchingItemsById.length > 0
+        ) {
+          restaurantFoodItems =
+            matchingItemsById;
+        } else if (
+          matchingItemsByFulfilment.length >
+          0
+        ) {
+          restaurantFoodItems =
+            matchingItemsByFulfilment;
+        } else {
+          restaurantFoodItems =
+            foodItems;
+        }
+
+        /*
+         * -------------------------------------------------
+         * 6. TOTALS
+         * -------------------------------------------------
+         */
 
         const foodTotal =
           restaurantFoodItems.reduce(
@@ -593,7 +774,7 @@ async function getShopifyOrders(
           );
 
         const serviceFee =
-          order.lineItems.nodes
+          allLineItems
             .filter((item) =>
               isServiceFeeItem(item),
             )
@@ -609,8 +790,13 @@ async function getShopifyOrders(
 
         return {
           id: order.id,
-          orderNumber: order.name,
-          createdAt: order.createdAt,
+
+          orderNumber:
+            order.name,
+
+          createdAt:
+            order.createdAt,
+
           restaurantId,
 
           orderType,
@@ -624,9 +810,10 @@ async function getShopifyOrders(
             order.createdAt,
           ),
 
-          dateTime: londonDateTime(
-            order.createdAt,
-          ),
+          dateTime:
+            londonDateTime(
+              order.createdAt,
+            ),
 
           customer:
             [
@@ -636,28 +823,37 @@ async function getShopifyOrders(
               .filter(Boolean)
               .join(" ") ||
             [
-              order.shippingAddress?.firstName,
-              order.shippingAddress?.lastName,
+              order.shippingAddress
+                ?.firstName,
+              order.shippingAddress
+                ?.lastName,
             ]
               .filter(Boolean)
               .join(" ") ||
             "Customer",
 
           customerEmail:
-            order.customer?.email || "",
+            order.customer?.email ||
+            "",
 
           customerPhone:
             order.customer?.phone ||
-            order.shippingAddress?.phone ||
+            order.shippingAddress
+              ?.phone ||
             "",
 
           customerAddress:
             [
-              order.shippingAddress?.address1,
-              order.shippingAddress?.address2,
-              order.shippingAddress?.city,
-              order.shippingAddress?.province,
-              order.shippingAddress?.zip,
+              order.shippingAddress
+                ?.address1,
+              order.shippingAddress
+                ?.address2,
+              order.shippingAddress
+                ?.city,
+              order.shippingAddress
+                ?.province,
+              order.shippingAddress
+                ?.zip,
             ]
               .filter(Boolean)
               .join(", "),
@@ -666,22 +862,27 @@ async function getShopifyOrders(
             restaurantFoodItems.map(
               (item) => ({
                 name: item.name,
-                quantity: item.quantity,
+                quantity:
+                  item.quantity,
               }),
             ),
 
           foodTotal,
 
           delivery: Number(
-            order.currentShippingPriceSet
-              ?.shopMoney?.amount || 0,
+            order
+              .currentShippingPriceSet
+              ?.shopMoney?.amount ||
+              0,
           ),
 
           serviceFee,
 
           total: Number(
-            order.currentTotalPriceSet
-              ?.shopMoney?.amount || 0,
+            order
+              .currentTotalPriceSet
+              ?.shopMoney?.amount ||
+              0,
           ),
 
           financialStatus:
@@ -777,6 +978,7 @@ export async function loader({
 
         return {
           ...order,
+
           status:
             savedStatus ||
             order.status,
@@ -796,7 +998,8 @@ export async function loader({
       restaurantId:
         user.restaurant.restaurantId,
 
-      name: user.restaurant.name,
+      name:
+        user.restaurant.name,
 
       acceptingOrders:
         user.restaurant.acceptingOrders,
