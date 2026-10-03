@@ -358,29 +358,6 @@ async function getShopifyOrders(restaurantId) {
           restaurantId,
         );
 
-        /*
-          TEMPORARY DIAGNOSTIC FOR ORDER #1030.
-
-          This will show the exact line-item
-          names and amounts Shopify is returning.
-        */
-        if (order.name === "#1030") {
-          console.log(
-            "ORDER #1030 LINE ITEMS:",
-            order.lineItems.nodes.map((item) => ({
-              name: item.name,
-              quantity: item.quantity,
-              amount:
-                item.originalTotalSet
-                  ?.shopMoney?.amount,
-              restaurantId: getAttribute(
-                item.customAttributes,
-                "_Restaurant ID",
-              ),
-            })),
-          );
-        }
-
         const matchingItems =
           order.lineItems.nodes.filter(
             (item) =>
@@ -405,12 +382,25 @@ async function getShopifyOrders(restaurantId) {
             0,
           );
 
+        /*
+          Shopify returns the selected fee
+          variant in the line-item name, for example:
+
+          Meal Deal Hub Service Fee - £0.99
+
+          Therefore we match the beginning of
+          the line-item name instead of requiring
+          an exact name.
+        */
         const serviceFee =
           order.lineItems.nodes
             .filter(
               (item) =>
-                item.name ===
-                "Meal Deal Hub Service Fee",
+                String(
+                  item.name || "",
+                ).startsWith(
+                  "Meal Deal Hub Service Fee",
+                ),
             )
             .reduce(
               (total, item) =>
