@@ -544,9 +544,15 @@ async function getShopifyOrders(
           belongsToRestaurant = true;
         }
 
+        /*
+          Keep this debug information on ONE LINE.
+          This makes Render searches for an order
+          number such as #1041 show every matching
+          value without hiding the surrounding data.
+        */
         console.log(
           "ORDER MATCH CHECK:",
-          {
+          JSON.stringify({
             order: order.name,
             restaurantId,
             restaurantName,
@@ -563,7 +569,7 @@ async function getShopifyOrders(
             foodNameMatch:
               foodNameMatchesRestaurant,
             belongsToRestaurant,
-          },
+          }),
         );
 
         if (!belongsToRestaurant) {
