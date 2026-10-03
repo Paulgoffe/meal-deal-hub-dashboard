@@ -21,12 +21,18 @@ const COOKIE_NAME =
 const SHOP_DOMAIN =
   "bite-pfyaja4s.myshopify.com";
 
+const SERVICE_FEE_PREFIX =
+  "Meal Deal Hub Service Fee";
+
+
 function getSessionSecret() {
   return (
-    process.env.RESTAURANT_SESSION_SECRET ||
+    process.env
+      .RESTAURANT_SESSION_SECRET ||
     "development-only-change-before-production"
   );
 }
+
 
 function sign(value) {
   return crypto
@@ -38,46 +44,67 @@ function sign(value) {
     .digest("hex");
 }
 
+
 function readCookie(request) {
   const cookieHeader =
     request.headers.get("Cookie") || "";
 
-  const cookies = Object.fromEntries(
-    cookieHeader
-      .split(";")
-      .map((cookie) =>
-        cookie.trim(),
-      )
-      .filter(Boolean)
-      .map((cookie) => {
-        const index =
-          cookie.indexOf("=");
+  const cookies =
+    Object.fromEntries(
+      cookieHeader
+        .split(";")
+        .map((cookie) =>
+          cookie.trim(),
+        )
+        .filter(Boolean)
+        .map((cookie) => {
+          const index =
+            cookie.indexOf("=");
 
-        if (index === -1) {
-          return [cookie, ""];
-        }
+          if (index === -1) {
+            return [
+              cookie,
+              "",
+            ];
+          }
 
-        return [
-          cookie.slice(0, index),
-          cookie.slice(index + 1),
-        ];
-      }),
-  );
+          return [
+            cookie.slice(
+              0,
+              index,
+            ),
+
+            cookie.slice(
+              index + 1,
+            ),
+          ];
+        }),
+    );
 
   return (
-    cookies[COOKIE_NAME] || null
+    cookies[COOKIE_NAME] ||
+    null
   );
 }
 
-function verifySession(sessionValue) {
+
+function verifySession(
+  sessionValue,
+) {
   if (!sessionValue) {
     return null;
   }
 
-  const [userId, signature] =
+  const [
+    userId,
+    signature,
+  ] =
     sessionValue.split(".");
 
-  if (!userId || !signature) {
+  if (
+    !userId ||
+    !signature
+  ) {
     return null;
   }
 
@@ -88,7 +115,9 @@ function verifySession(sessionValue) {
     Buffer.from(signature);
 
   const expectedBuffer =
-    Buffer.from(expectedSignature);
+    Buffer.from(
+      expectedSignature,
+    );
 
   if (
     signatureBuffer.length !==
@@ -115,6 +144,7 @@ function verifySession(sessionValue) {
     ? parsedUserId
     : null;
 }
+
 
 async function getAuthenticatedUser(
   request,
@@ -153,6 +183,7 @@ async function getAuthenticatedUser(
   return user;
 }
 
+
 function getAttribute(
   attributes,
   key,
@@ -165,26 +196,28 @@ function getAttribute(
   );
 }
 
-function londonTime(dateString) {
-  if (!dateString) {
-    return "";
-  }
 
-  return new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      timeZone:
-        "Europe/London",
+function normaliseText(value) {
+  return String(
+    value || "",
+  )
+    .trim()
+    .toLowerCase();
+}
 
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  ).format(
-    new Date(dateString),
+
+function isServiceFeeItem(
+  item,
+) {
+  return String(
+    item?.name || "",
+  ).startsWith(
+    SERVICE_FEE_PREFIX,
   );
 }
 
-function londonDateLabel(
+
+function londonTime(
   dateString,
 ) {
   if (!dateString) {
@@ -197,16 +230,22 @@ function londonDateLabel(
       timeZone:
         "Europe/London",
 
-      day: "numeric",
-      month: "short",
-      year: "numeric",
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      hour12:
+        true,
     },
   ).format(
     new Date(dateString),
   );
 }
 
-function londonDateTimeLabel(
+
+function londonDateTime(
   dateString,
 ) {
   if (!dateString) {
@@ -219,17 +258,29 @@ function londonDateTimeLabel(
       timeZone:
         "Europe/London",
 
-      day: "numeric",
-      month: "short",
-      year: "numeric",
+      day:
+        "numeric",
 
-      hour: "2-digit",
-      minute: "2-digit",
+      month:
+        "short",
+
+      year:
+        "numeric",
+
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      hour12:
+        true,
     },
   ).format(
     new Date(dateString),
   );
 }
+
 
 function londonDateParts(
   date = new Date(),
@@ -241,10 +292,17 @@ function londonDateParts(
         timeZone:
           "Europe/London",
 
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        weekday: "short",
+        year:
+          "numeric",
+
+        month:
+          "2-digit",
+
+        day:
+          "2-digit",
+
+        weekday:
+          "short",
       },
     ).formatToParts(date);
 
@@ -255,22 +313,20 @@ function londonDateParts(
     )?.value || "";
 
   return {
-    year: Number(
-      get("year"),
-    ),
+    year:
+      Number(get("year")),
 
-    month: Number(
-      get("month"),
-    ),
+    month:
+      Number(get("month")),
 
-    day: Number(
-      get("day"),
-    ),
+    day:
+      Number(get("day")),
 
     weekday:
       get("weekday"),
   };
 }
+
 
 function dateKeyFromParts(
   year,
@@ -295,6 +351,7 @@ function dateKeyFromParts(
   ].join("-");
 }
 
+
 function londonDateKey(
   dateString,
 ) {
@@ -314,191 +371,173 @@ function londonDateKey(
   );
 }
 
-function calendarDateFromKey(
-  dateKey,
-) {
-  const [
-    year,
-    month,
-    day,
-  ] = String(dateKey)
-    .split("-")
-    .map(Number);
-
-  return new Date(
-    Date.UTC(
-      year,
-      month - 1,
-      day,
-    ),
-  );
-}
-
-function calendarKey(date) {
-  return dateKeyFromParts(
-    date.getUTCFullYear(),
-    date.getUTCMonth() + 1,
-    date.getUTCDate(),
-  );
-}
-
-function displayCalendarDate(
-  date,
-) {
-  return new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    },
-  ).format(date);
-}
-
-function getPaymentWeekFromDateKey(
-  dateKey,
-) {
-  const date =
-    calendarDateFromKey(
-      dateKey,
-    );
-
-  const day =
-    date.getUTCDay();
-
-  const daysSinceMonday =
-    day === 0
-      ? 6
-      : day - 1;
-
-  const monday =
-    new Date(date);
-
-  monday.setUTCDate(
-    date.getUTCDate() -
-      daysSinceMonday,
-  );
-
-  const sunday =
-    new Date(monday);
-
-  sunday.setUTCDate(
-    monday.getUTCDate() + 6,
-  );
-
-  const payout =
-    new Date(monday);
-
-  payout.setUTCDate(
-    monday.getUTCDate() + 9,
-  );
-
-  return {
-    startKey:
-      calendarKey(monday),
-
-    endKey:
-      calendarKey(sunday),
-
-    payoutKey:
-      calendarKey(payout),
-
-    startLabel:
-      displayCalendarDate(
-        monday,
-      ),
-
-    endLabel:
-      displayCalendarDate(
-        sunday,
-      ),
-
-    payoutLabel:
-      displayCalendarDate(
-        payout,
-      ),
-
-    startDate:
-      monday,
-
-    endDate:
-      sunday,
-
-    payoutDate:
-      payout,
-  };
-}
 
 function getCurrentPaymentWeek() {
   const londonNow =
     londonDateParts();
 
-  const todayKey =
-    dateKeyFromParts(
-      londonNow.year,
-      londonNow.month,
-      londonNow.day,
+  const weekdayNumbers = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6,
+  };
+
+  const daysSinceMonday =
+    weekdayNumbers[
+      londonNow.weekday
+    ] ?? 0;
+
+  const todayCalendar =
+    new Date(
+      Date.UTC(
+        londonNow.year,
+        londonNow.month - 1,
+        londonNow.day,
+      ),
     );
 
-  return getPaymentWeekFromDateKey(
-    todayKey,
+  const mondayCalendar =
+    new Date(
+      todayCalendar,
+    );
+
+  mondayCalendar.setUTCDate(
+    todayCalendar.getUTCDate() -
+      daysSinceMonday,
+  );
+
+  const sundayCalendar =
+    new Date(
+      mondayCalendar,
+    );
+
+  sundayCalendar.setUTCDate(
+    mondayCalendar.getUTCDate() +
+      6,
+  );
+
+  const payoutCalendar =
+    new Date(
+      mondayCalendar,
+    );
+
+  payoutCalendar.setUTCDate(
+    mondayCalendar.getUTCDate() +
+      9,
+  );
+
+
+  function calendarKey(
+    date,
+  ) {
+    return dateKeyFromParts(
+      date.getUTCFullYear(),
+      date.getUTCMonth() + 1,
+      date.getUTCDate(),
+    );
+  }
+
+
+  function displayDate(
+    date,
+  ) {
+    return (
+      new Intl.DateTimeFormat(
+        "en-GB",
+        {
+          day:
+            "numeric",
+
+          month:
+            "short",
+
+          year:
+            "numeric",
+
+          timeZone:
+            "UTC",
+        },
+      ).format(date)
+    );
+  }
+
+
+  return {
+    startKey:
+      calendarKey(
+        mondayCalendar,
+      ),
+
+    endKey:
+      calendarKey(
+        sundayCalendar,
+      ),
+
+    startLabel:
+      displayDate(
+        mondayCalendar,
+      ),
+
+    endLabel:
+      displayDate(
+        sundayCalendar,
+      ),
+
+    payoutLabel:
+      displayDate(
+        payoutCalendar,
+      ),
+  };
+}
+
+
+function getOrderType(
+  order,
+) {
+  /*
+    Shopify local-pickup orders
+    normally do not have a shipping
+    address.
+
+    Delivery orders normally do.
+  */
+
+  if (
+    !order.shippingAddress
+  ) {
+    return "pickup";
+  }
+
+  return "delivery";
+}
+
+
+function getPickupLocation(
+  order,
+) {
+  return (
+    order.shippingLine?.title ||
+    order.shippingLine?.code ||
+    ""
   );
 }
 
-function getDeliveryType(
-  shippingLine,
-  shippingAddress,
-) {
-  const methodText = [
-    shippingLine?.title,
-    shippingLine?.code,
-    shippingLine?.deliveryCategory,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  const pickupWords = [
-    "pickup",
-    "pick up",
-    "pick-up",
-    "collection",
-    "collect",
-    "click and collect",
-    "local pickup",
-  ];
-
-  const isPickup =
-    pickupWords.some(
-      (word) =>
-        methodText.includes(
-          word,
-        ),
-    );
-
-  if (isPickup) {
-    return "PICKUP";
-  }
-
-  if (
-    !shippingAddress &&
-    !shippingLine
-  ) {
-    return "PICKUP";
-  }
-
-  return "DELIVERY";
-}
 
 async function getShopifyOrders(
   restaurantId,
+  restaurantName,
 ) {
   try {
     const { admin } =
-      await shopify.unauthenticated.admin(
-        SHOP_DOMAIN,
-      );
+      await shopify
+        .unauthenticated
+        .admin(
+          SHOP_DOMAIN,
+        );
 
     const response =
       await admin.graphql(`
@@ -534,6 +573,7 @@ async function getShopifyOrders(
               shippingLine {
                 title
                 code
+
                 deliveryCategory
               }
 
@@ -579,7 +619,9 @@ async function getShopifyOrders(
     const result =
       await response.json();
 
-    if (result.errors) {
+    if (
+      result.errors?.length
+    ) {
       console.error(
         "SHOPIFY GRAPHQL ERRORS:",
         result.errors,
@@ -595,26 +637,70 @@ async function getShopifyOrders(
       nodes.length,
     );
 
+
     return nodes
       .map((order) => {
-        /*
-          TEMPORARY DEBUG FOR ORDER #1032.
 
-          This will show us exactly what
-          Shopify is returning for the
-          restaurant ID and pickup method.
+        const foodItems =
+          order.lineItems.nodes.filter(
+            (item) =>
+              !isServiceFeeItem(
+                item,
+              ),
+          );
+
+
+        const matchingItems =
+          foodItems.filter(
+            (item) =>
+              getAttribute(
+                item.customAttributes,
+                "_Restaurant ID",
+              ) ===
+              restaurantId,
+          );
+
+
+        const orderType =
+          getOrderType(order);
+
+
+        const pickupLocation =
+          getPickupLocation(
+            order,
+          );
+
+
+        /*
+          Temporary diagnostic for
+          order #1033.
         */
         if (
-          order.name === "#1032"
+          order.name ===
+          "#1033"
         ) {
           console.log(
-            "DEBUG ORDER #1032:",
+            "DEBUG ORDER #1033:",
             {
               orderName:
                 order.name,
 
+              createdAt:
+                order.createdAt,
+
+              londonTime:
+                londonTime(
+                  order.createdAt,
+                ),
+
               restaurantLookingFor:
                 restaurantId,
+
+              restaurantName,
+
+              orderType,
+
+              pickupLocation,
 
               shippingLine:
                 order.shippingLine,
@@ -645,23 +731,120 @@ async function getShopifyOrders(
           );
         }
 
-        const matchingItems =
-          order.lineItems.nodes.filter(
-            (item) =>
+
+        /*
+          PRIMARY RESTAURANT MATCH
+
+          Normal orders should match
+          using the hidden Restaurant ID.
+        */
+
+        let belongsToRestaurant =
+          matchingItems.length >
+          0;
+
+
+        /*
+          PICKUP FALLBACK
+
+          Some Shopify pickup orders have
+          reached the order without the
+          hidden line-item Restaurant ID.
+
+          If there is no Restaurant ID on
+          any food line, we can use the
+          Shopify pickup location as a
+          fallback.
+
+          We only do this for pickup orders
+          and only when ALL food items are
+          missing Restaurant ID, so an order
+          explicitly belonging to another
+          restaurant cannot be reassigned.
+        */
+
+        const foodRestaurantIds =
+          foodItems
+            .map((item) =>
               getAttribute(
                 item.customAttributes,
                 "_Restaurant ID",
-              ) === restaurantId,
+              ),
+            )
+            .filter(Boolean);
+
+
+        const noFoodRestaurantId =
+          foodItems.length >
+            0 &&
+          foodRestaurantIds.length ===
+            0;
+
+
+        const pickupMatchesRestaurant =
+          orderType ===
+            "pickup" &&
+          noFoodRestaurantId &&
+          restaurantName &&
+          pickupLocation &&
+          (
+            normaliseText(
+              pickupLocation,
+            ) ===
+              normaliseText(
+                restaurantName,
+              ) ||
+            normaliseText(
+              pickupLocation,
+            ).includes(
+              normaliseText(
+                restaurantName,
+              ),
+            ) ||
+            normaliseText(
+              restaurantName,
+            ).includes(
+              normaliseText(
+                pickupLocation,
+              ),
+            )
           );
 
+
         if (
-          matchingItems.length === 0
+          pickupMatchesRestaurant
+        ) {
+          belongsToRestaurant =
+            true;
+        }
+
+
+        if (
+          !belongsToRestaurant
         ) {
           return null;
         }
 
+
+        /*
+          If the normal Restaurant ID
+          match worked, use those items.
+
+          If we're using the pickup
+          fallback, all non-service-fee
+          food items belong to this
+          pickup order.
+        */
+
+        const restaurantFoodItems =
+          matchingItems.length >
+          0
+            ? matchingItems
+            : foodItems;
+
+
         const foodTotal =
-          matchingItems.reduce(
+          restaurantFoodItems.reduce(
             (
               total,
               item,
@@ -676,15 +859,13 @@ async function getShopifyOrders(
             0,
           );
 
+
         const serviceFee =
           order.lineItems.nodes
             .filter(
               (item) =>
-                String(
-                  item.name ||
-                    "",
-                ).startsWith(
-                  "Meal Deal Hub Service Fee",
+                isServiceFeeItem(
+                  item,
                 ),
             )
             .reduce(
@@ -697,28 +878,15 @@ async function getShopifyOrders(
                   item
                     .originalTotalSet
                     ?.shopMoney
-                    ?.amount ||
-                    0,
+                    ?.amount || 0,
                 ),
               0,
             );
 
-        const delivery =
-          Number(
-            order
-              .currentShippingPriceSet
-              ?.shopMoney
-              ?.amount || 0,
-          );
-
-        const deliveryType =
-          getDeliveryType(
-            order.shippingLine,
-            order.shippingAddress,
-          );
 
         return {
-          id: order.id,
+          id:
+            order.id,
 
           orderNumber:
             order.name,
@@ -728,25 +896,19 @@ async function getShopifyOrders(
 
           restaurantId,
 
-          time: londonTime(
-            order.createdAt,
-          ),
+          orderType,
 
-          date:
-            londonDateLabel(
+          pickupLocation,
+
+          time:
+            londonTime(
               order.createdAt,
             ),
 
           dateTime:
-            londonDateTimeLabel(
+            londonDateTime(
               order.createdAt,
             ),
-
-          deliveryType,
-
-          shippingMethod:
-            order.shippingLine
-              ?.title || "",
 
           customer:
             [
@@ -782,48 +944,46 @@ async function getShopifyOrders(
               ?.phone ||
             "",
 
-          customerAddress: [
-            order.shippingAddress
-              ?.address1,
+          customerAddress:
+            [
+              order.shippingAddress
+                ?.address1,
 
-            order.shippingAddress
-              ?.address2,
+              order.shippingAddress
+                ?.address2,
 
-            order.shippingAddress
-              ?.city,
+              order.shippingAddress
+                ?.city,
 
-            order.shippingAddress
-              ?.province,
+              order.shippingAddress
+                ?.province,
 
-            order.shippingAddress
-              ?.zip,
-          ]
-            .filter(Boolean)
-            .join(", "),
+              order.shippingAddress
+                ?.zip,
+            ]
+              .filter(Boolean)
+              .join(", "),
 
           items:
-            matchingItems.map(
+            restaurantFoodItems.map(
               (item) => ({
                 name:
                   item.name,
 
                 quantity:
                   item.quantity,
-
-                total:
-                  Number(
-                    item
-                      .originalTotalSet
-                      ?.shopMoney
-                      ?.amount ||
-                      0,
-                  ),
               }),
             ),
 
           foodTotal,
 
-          delivery,
+          delivery:
+            Number(
+              order
+                .currentShippingPriceSet
+                ?.shopMoney
+                ?.amount || 0,
+            ),
 
           serviceFee,
 
@@ -839,10 +999,12 @@ async function getShopifyOrders(
             order
               .displayFinancialStatus,
 
-          status: "new",
+          status:
+            "new",
         };
       })
       .filter(Boolean);
+
   } catch (error) {
     console.error(
       "Meal Deal Hub Shopify order error:",
@@ -853,202 +1015,6 @@ async function getShopifyOrders(
   }
 }
 
-async function saveCompletedPayoutWeeks(
-  restaurantDbId,
-  orders,
-) {
-  try {
-    const currentWeek =
-      getCurrentPaymentWeek();
-
-    const completedAcceptedOrders =
-      orders.filter(
-        (order) => {
-          if (
-            order.status !==
-            "accepted"
-          ) {
-            return false;
-          }
-
-          const orderDate =
-            londonDateKey(
-              order.createdAt,
-            );
-
-          return (
-            orderDate &&
-            orderDate <
-              currentWeek.startKey
-          );
-        },
-      );
-
-    const weekGroups =
-      new Map();
-
-    for (
-      const order of
-      completedAcceptedOrders
-    ) {
-      const orderDate =
-        londonDateKey(
-          order.createdAt,
-        );
-
-      const week =
-        getPaymentWeekFromDateKey(
-          orderDate,
-        );
-
-      if (
-        !weekGroups.has(
-          week.startKey,
-        )
-      ) {
-        weekGroups.set(
-          week.startKey,
-          {
-            week,
-            orders: [],
-          },
-        );
-      }
-
-      weekGroups
-        .get(week.startKey)
-        .orders.push(order);
-    }
-
-    for (
-      const {
-        week,
-        orders:
-          weekOrders,
-      } of weekGroups.values()
-    ) {
-      const foodSales =
-        weekOrders.reduce(
-          (
-            total,
-            order,
-          ) =>
-            total +
-            Number(
-              order.foodTotal ||
-                0,
-            ),
-          0,
-        );
-
-      const deliveryIncome =
-        weekOrders.reduce(
-          (
-            total,
-            order,
-          ) =>
-            total +
-            Number(
-              order.delivery ||
-                0,
-            ),
-          0,
-        );
-
-      const serviceFees =
-        weekOrders.reduce(
-          (
-            total,
-            order,
-          ) =>
-            total +
-            Number(
-              order.serviceFee ||
-                0,
-            ),
-          0,
-        );
-
-      const commission =
-        foodSales * 0.1;
-
-      const restaurantEarnings =
-        foodSales * 0.9 +
-        deliveryIncome;
-
-      await db.restaurantPayout.upsert(
-        {
-          where: {
-            restaurantId_weekStart:
-              {
-                restaurantId:
-                  restaurantDbId,
-
-                weekStart:
-                  week.startDate,
-              },
-          },
-
-          update: {
-            weekEnd:
-              week.endDate,
-
-            payoutDate:
-              week.payoutDate,
-
-            foodSales,
-
-            deliveryIncome,
-
-            commission,
-
-            serviceFees,
-
-            restaurantEarnings,
-
-            acceptedOrderCount:
-              weekOrders.length,
-          },
-
-          create: {
-            restaurantId:
-              restaurantDbId,
-
-            weekStart:
-              week.startDate,
-
-            weekEnd:
-              week.endDate,
-
-            payoutDate:
-              week.payoutDate,
-
-            foodSales,
-
-            deliveryIncome,
-
-            commission,
-
-            serviceFees,
-
-            restaurantEarnings,
-
-            acceptedOrderCount:
-              weekOrders.length,
-
-            status:
-              "expected",
-          },
-        },
-      );
-    }
-  } catch (error) {
-    console.error(
-      "Meal Deal Hub payout history error:",
-      error,
-    );
-  }
-}
 
 export async function loader({
   request,
@@ -1064,11 +1030,15 @@ export async function loader({
     );
   }
 
+
   const orders =
     await getShopifyOrders(
       user.restaurant
         .restaurantId,
+
+      user.restaurant.name,
     );
+
 
   const decisions =
     await db.orderDecision.findMany(
@@ -1077,140 +1047,77 @@ export async function loader({
           restaurantId:
             user.restaurant.id,
         },
+
+        orderBy: {
+          decidedAt:
+            "desc",
+        },
       },
     );
+
 
   const decisionMap =
     new Map(
       decisions.map(
         (decision) => [
-          decision.shopifyOrderId,
+          decision
+            .shopifyOrderId,
+
           decision.status,
         ],
       ),
     );
 
+
   const ORDER_MAX_AGE_MS =
     2 * 60 * 60 * 1000;
 
-  const now = Date.now();
+
+  const now =
+    Date.now();
+
 
   const ordersWithDecisions =
     orders
-      .filter(
-        (order) => {
-          const savedStatus =
-            decisionMap.get(
-              order.id,
-            );
-
-          if (savedStatus) {
-            return true;
-          }
-
-          return (
-            order.createdAt &&
-            now -
-              new Date(
-                order.createdAt,
-              ).getTime() <=
-              ORDER_MAX_AGE_MS
+      .filter((order) => {
+        const savedStatus =
+          decisionMap.get(
+            order.id,
           );
-        },
-      )
-      .map(
-        (order) => {
-          const savedStatus =
-            decisionMap.get(
-              order.id,
-            );
 
-          return {
-            ...order,
+        if (savedStatus) {
+          return true;
+        }
 
-            status:
-              savedStatus ||
-              order.status,
-          };
-        },
-      );
+        return (
+          order.createdAt &&
+          now -
+            new Date(
+              order.createdAt,
+            ).getTime() <=
+            ORDER_MAX_AGE_MS
+        );
+      })
+      .map((order) => {
+        const savedStatus =
+          decisionMap.get(
+            order.id,
+          );
 
-  await saveCompletedPayoutWeeks(
-    user.restaurant.id,
-    ordersWithDecisions,
-  );
+        return {
+          ...order,
 
-  const payoutHistoryRaw =
-    await db.restaurantPayout.findMany(
-      {
-        where: {
-          restaurantId:
-            user.restaurant.id,
-        },
+          status:
+            savedStatus ||
+            order.status,
+        };
+      });
 
-        orderBy: {
-          weekStart: "desc",
-        },
-
-        take: 52,
-      },
-    );
-
-  const payoutHistory =
-    payoutHistoryRaw.map(
-      (payout) => ({
-        id: payout.id,
-
-        weekStart:
-          payout.weekStart
-            .toISOString(),
-
-        weekEnd:
-          payout.weekEnd
-            .toISOString(),
-
-        payoutDate:
-          payout.payoutDate
-            .toISOString(),
-
-        foodSales:
-          Number(
-            payout.foodSales,
-          ),
-
-        deliveryIncome:
-          Number(
-            payout.deliveryIncome,
-          ),
-
-        commission:
-          Number(
-            payout.commission,
-          ),
-
-        serviceFees:
-          Number(
-            payout.serviceFees,
-          ),
-
-        restaurantEarnings:
-          Number(
-            payout
-              .restaurantEarnings,
-          ),
-
-        acceptedOrderCount:
-          payout
-            .acceptedOrderCount,
-
-        status:
-          payout.status,
-      }),
-    );
 
   return {
     user: {
-      email: user.email,
+      email:
+        user.email,
 
       firstName:
         user.firstName,
@@ -1237,10 +1144,9 @@ export async function loader({
 
     orders:
       ordersWithDecisions,
-
-    payoutHistory,
   };
 }
+
 
 export async function action({
   request,
@@ -1256,8 +1162,10 @@ export async function action({
     );
   }
 
+
   const formData =
     await request.formData();
+
 
   const intent =
     String(
@@ -1265,6 +1173,7 @@ export async function action({
         "intent",
       ) || "",
     );
+
 
   console.log(
     "ORDER ACTION RECEIVED:",
@@ -1290,6 +1199,7 @@ export async function action({
     },
   );
 
+
   if (
     intent ===
       "accept-order" ||
@@ -1310,23 +1220,27 @@ export async function action({
         ) || "",
       );
 
+
     if (
       !shopifyOrderId ||
       !orderNumber
     ) {
       return {
-        success: false,
+        success:
+          false,
 
         message:
           "Order information is missing.",
       };
     }
 
+
     const status =
       intent ===
       "accept-order"
         ? "accepted"
         : "rejected";
+
 
     await db.orderDecision.upsert(
       {
@@ -1359,12 +1273,17 @@ export async function action({
       },
     );
 
+
     return {
-      success: true,
+      success:
+        true,
+
       orderNumber,
+
       status,
     };
   }
+
 
   if (
     intent ===
@@ -1385,9 +1304,11 @@ export async function action({
     );
 
     return {
-      success: true,
+      success:
+        true,
     };
   }
+
 
   if (
     intent ===
@@ -1408,55 +1329,326 @@ export async function action({
     );
 
     return {
-      success: true,
+      success:
+        true,
     };
   }
 
+
   return {
-    success: false,
+    success:
+      false,
   };
 }
 
+
 function money(value) {
-  return new Intl.NumberFormat(
-    "en-GB",
-    {
-      style: "currency",
-      currency: "GBP",
-    },
-  ).format(
-    Number(value || 0),
-  );
-}
-
-function isCurrentAcceptedOrder(
-  order,
-) {
-  if (
-    order.status !==
-    "accepted"
-  ) {
-    return false;
-  }
-
   return (
-    londonDateKey(
-      order.createdAt,
-    ) ===
-    londonDateKey(
-      new Date().toISOString(),
+    new Intl.NumberFormat(
+      "en-GB",
+      {
+        style:
+          "currency",
+
+        currency:
+          "GBP",
+      },
+    ).format(
+      Number(value || 0),
     )
   );
 }
+
+
+function OrderTypeBadge({
+  orderType,
+}) {
+  const pickup =
+    orderType ===
+    "pickup";
+
+  return (
+    <div
+      style={
+        pickup
+          ? styles.pickupBadge
+          : styles.deliveryBadge
+      }
+    >
+      {pickup
+        ? "🛍 PICKUP"
+        : "🚗 DELIVERY"}
+    </div>
+  );
+}
+
+
+function OrderDetails({
+  order,
+  showStatus = false,
+}) {
+  if (!order) {
+    return null;
+  }
+
+  return (
+    <>
+      <div
+        style={
+          styles.detailTop
+        }
+      >
+        <div>
+          <OrderTypeBadge
+            orderType={
+              order.orderType
+            }
+          />
+
+          <h2
+            style={
+              styles.orderNumber
+            }
+          >
+            {order.orderNumber}
+          </h2>
+
+          <div
+            style={
+              styles.greyText
+            }
+          >
+            {order.dateTime}
+          </div>
+        </div>
+
+        <div
+          style={
+            styles.total
+          }
+        >
+          {money(
+            order.total,
+          )}
+        </div>
+      </div>
+
+
+      {showStatus && (
+        <div
+          style={{
+            marginTop:
+              "14px",
+          }}
+        >
+          <span
+            style={
+              order.status ===
+              "accepted"
+                ? styles
+                    .acceptedBadge
+                : styles
+                    .rejectedBadge
+            }
+          >
+            {String(
+              order.status ||
+                "",
+            ).toUpperCase()}
+          </span>
+        </div>
+      )}
+
+
+      <div
+        style={
+          styles.customerDetails
+        }
+      >
+        <div>
+          <strong>
+            Customer:
+          </strong>{" "}
+          {order.customer ||
+            "Customer"}
+        </div>
+
+
+        {order.customerPhone && (
+          <div>
+            <strong>
+              Phone:
+            </strong>{" "}
+            {order.customerPhone}
+          </div>
+        )}
+
+
+        {order.customerEmail && (
+          <div>
+            <strong>
+              Email:
+            </strong>{" "}
+            {order.customerEmail}
+          </div>
+        )}
+
+
+        {order.orderType ===
+          "delivery" &&
+          order.customerAddress && (
+            <div>
+              <strong>
+                Delivery address:
+              </strong>{" "}
+              {
+                order.customerAddress
+              }
+            </div>
+          )}
+
+
+        {order.orderType ===
+          "pickup" &&
+          order.pickupLocation && (
+            <div>
+              <strong>
+                Pickup location:
+              </strong>{" "}
+              {
+                order.pickupLocation
+              }
+            </div>
+          )}
+      </div>
+
+
+      <div
+        style={
+          styles.items
+        }
+      >
+        {order.items.map(
+          (
+            item,
+            index,
+          ) => (
+            <div
+              key={index}
+              style={
+                styles.item
+              }
+            >
+              <span
+                style={
+                  styles.quantity
+                }
+              >
+                {item.quantity} ×
+              </span>{" "}
+              {item.name}
+            </div>
+          ),
+        )}
+      </div>
+
+
+      <div
+        style={
+          styles.orderBreakdown
+        }
+      >
+        <div
+          style={
+            styles.breakdownRow
+          }
+        >
+          <span>
+            Food
+          </span>
+
+          <strong>
+            {money(
+              order.foodTotal,
+            )}
+          </strong>
+        </div>
+
+
+        {Number(
+          order.delivery ||
+            0,
+        ) > 0 && (
+          <div
+            style={
+              styles.breakdownRow
+            }
+          >
+            <span>
+              Delivery
+            </span>
+
+            <strong>
+              {money(
+                order.delivery,
+              )}
+            </strong>
+          </div>
+        )}
+
+
+        {Number(
+          order.serviceFee ||
+            0,
+        ) > 0 && (
+          <div
+            style={
+              styles.breakdownRow
+            }
+          >
+            <span>
+              Service fee
+            </span>
+
+            <strong>
+              {money(
+                order.serviceFee,
+              )}
+            </strong>
+          </div>
+        )}
+
+
+        <div
+          style={
+            styles.breakdownTotal
+          }
+        >
+          <span>
+            Order total
+          </span>
+
+          <strong>
+            {money(
+              order.total,
+            )}
+          </strong>
+        </div>
+      </div>
+    </>
+  );
+}
+
 
 export default function RestaurantDashboard() {
   const {
     restaurant,
     user,
-    orders: shopifyOrders,
-    payoutHistory:
-      savedPayoutHistory,
-  } = useLoaderData();
+    orders:
+      shopifyOrders,
+  } =
+    useLoaderData();
+
 
   const navigation =
     useNavigation();
@@ -1467,11 +1659,16 @@ export default function RestaurantDashboard() {
   const orderFetcher =
     useFetcher();
 
+
   useEffect(() => {
     const interval =
-      setInterval(() => {
-        revalidator.revalidate();
-      }, 10000);
+      setInterval(
+        () => {
+          revalidator
+            .revalidate();
+        },
+        10000,
+      );
 
     return () =>
       clearInterval(
@@ -1479,32 +1676,39 @@ export default function RestaurantDashboard() {
       );
   }, [revalidator]);
 
+
   const [
     activeTab,
     setActiveTab,
-  ] = useState("orders");
+  ] =
+    useState(
+      "orders",
+    );
+
 
   const [
     orders,
     setOrders,
-  ] = useState(
-    shopifyOrders || [],
-  );
+  ] =
+    useState(
+      shopifyOrders ||
+        [],
+    );
+
 
   const [
     soundEnabled,
     setSoundEnabled,
-  ] = useState(false);
+  ] =
+    useState(false);
+
 
   const [
-    selectedOrder,
-    setSelectedOrder,
-  ] = useState(null);
+    selectedOrderId,
+    setSelectedOrderId,
+  ] =
+    useState(null);
 
-  const [
-    selectedPayout,
-    setSelectedPayout,
-  ] = useState(null);
 
   const audioContextRef =
     useRef(null);
@@ -1512,28 +1716,14 @@ export default function RestaurantDashboard() {
   const alarmTimerRef =
     useRef(null);
 
+
   useEffect(() => {
     setOrders(
-      shopifyOrders || [],
+      shopifyOrders ||
+        [],
     );
-
-    if (selectedOrder) {
-      const updatedOrder =
-        (
-          shopifyOrders || []
-        ).find(
-          (order) =>
-            order.id ===
-            selectedOrder.id,
-        );
-
-      if (updatedOrder) {
-        setSelectedOrder(
-          updatedOrder,
-        );
-      }
-    }
   }, [shopifyOrders]);
+
 
   const restaurantOrders =
     orders.filter(
@@ -1542,11 +1732,14 @@ export default function RestaurantDashboard() {
         restaurant.restaurantId,
     );
 
+
   const newOrders =
     restaurantOrders.filter(
       (order) =>
-        order.status === "new",
+        order.status ===
+        "new",
     );
+
 
   const acceptedOrders =
     restaurantOrders.filter(
@@ -1555,37 +1748,41 @@ export default function RestaurantDashboard() {
         "accepted",
     );
 
-  const currentOrders =
+
+  const rejectedOrders =
     restaurantOrders.filter(
-      isCurrentAcceptedOrder,
+      (order) =>
+        order.status ===
+        "rejected",
     );
 
+
   const previousOrders =
-    restaurantOrders
-      .filter(
-        (order) =>
-          order.status ===
-            "rejected" ||
-          (
-            order.status ===
-              "accepted" &&
-            !isCurrentAcceptedOrder(
-              order,
-            )
-          ),
-      )
-      .sort(
-        (a, b) =>
-          new Date(
-            b.createdAt,
-          ).getTime() -
-          new Date(
-            a.createdAt,
-          ).getTime(),
-      );
+    [
+      ...acceptedOrders,
+      ...rejectedOrders,
+    ].sort(
+      (a, b) =>
+        new Date(
+          b.createdAt,
+        ).getTime() -
+        new Date(
+          a.createdAt,
+        ).getTime(),
+    );
+
+
+  const selectedOrder =
+    restaurantOrders.find(
+      (order) =>
+        order.id ===
+        selectedOrderId,
+    ) || null;
+
 
   const paymentWeek =
     getCurrentPaymentWeek();
+
 
   const weeklyAcceptedOrders =
     acceptedOrders.filter(
@@ -1597,19 +1794,24 @@ export default function RestaurantDashboard() {
 
         return (
           orderDate >=
-            paymentWeek.startKey &&
+            paymentWeek
+              .startKey &&
           orderDate <=
-            paymentWeek.endKey
+            paymentWeek
+              .endKey
         );
       },
     );
 
+
   const firstNewOrder =
     newOrders[0];
+
 
   const isSaving =
     navigation.state ===
     "submitting";
+
 
   function stopAlarm() {
     if (
@@ -1623,6 +1825,7 @@ export default function RestaurantDashboard() {
         null;
     }
   }
+
 
   function makeAlarmSound() {
     try {
@@ -1648,10 +1851,12 @@ export default function RestaurantDashboard() {
       }
 
       const oscillator =
-        context.createOscillator();
+        context
+          .createOscillator();
 
       const gain =
-        context.createGain();
+        context
+          .createGain();
 
       oscillator.type =
         "square";
@@ -1659,16 +1864,18 @@ export default function RestaurantDashboard() {
       oscillator.frequency.value =
         880;
 
-      gain.gain.setValueAtTime(
-        0.9,
-        context.currentTime,
-      );
+      gain.gain
+        .setValueAtTime(
+          0.9,
+          context.currentTime,
+        );
 
-      gain.gain.exponentialRampToValueAtTime(
-        0.01,
-        context.currentTime +
-          0.7,
-      );
+      gain.gain
+        .exponentialRampToValueAtTime(
+          0.01,
+          context.currentTime +
+            0.7,
+        );
 
       oscillator.connect(
         gain,
@@ -1684,6 +1891,7 @@ export default function RestaurantDashboard() {
         context.currentTime +
           0.7,
       );
+
     } catch (error) {
       console.log(
         "Alarm unavailable",
@@ -1692,32 +1900,43 @@ export default function RestaurantDashboard() {
     }
   }
 
+
   function enableSound() {
-    setSoundEnabled(true);
+    setSoundEnabled(
+      true,
+    );
+
     makeAlarmSound();
   }
+
 
   useEffect(() => {
     stopAlarm();
 
     if (
-      newOrders.length > 0 &&
+      newOrders.length >
+        0 &&
       soundEnabled
     ) {
       makeAlarmSound();
 
       alarmTimerRef.current =
-        setInterval(() => {
-          makeAlarmSound();
-        }, 1500);
+        setInterval(
+          () => {
+            makeAlarmSound();
+          },
+          1500,
+        );
     }
 
     return () =>
       stopAlarm();
+
   }, [
     newOrders.length,
     soundEnabled,
   ]);
+
 
   const acceptedFoodSales =
     weeklyAcceptedOrders.reduce(
@@ -1733,6 +1952,7 @@ export default function RestaurantDashboard() {
       0,
     );
 
+
   const deliveryIncome =
     weeklyAcceptedOrders.reduce(
       (
@@ -1747,14 +1967,17 @@ export default function RestaurantDashboard() {
       0,
     );
 
+
   const commission =
     acceptedFoodSales *
     0.1;
+
 
   const restaurantEarnings =
     acceptedFoodSales *
       0.9 +
     deliveryIncome;
+
 
   const serviceFees =
     weeklyAcceptedOrders.reduce(
@@ -1770,12 +1993,29 @@ export default function RestaurantDashboard() {
       0,
     );
 
+
   return (
-    <main style={styles.page}>
-      <div style={styles.container}>
-        <header style={styles.header}>
+    <main
+      style={
+        styles.page
+      }
+    >
+      <div
+        style={
+          styles.container
+        }
+      >
+        <header
+          style={
+            styles.header
+          }
+        >
           <div>
-            <div style={styles.logo}>
+            <div
+              style={
+                styles.logo
+              }
+            >
               MEAL DEAL HUB
             </div>
 
@@ -1799,18 +2039,24 @@ export default function RestaurantDashboard() {
             </div>
           </div>
 
+
           <div
             style={
-              restaurant.acceptingOrders
-                ? styles.openBadge
-                : styles.pausedBadge
+              restaurant
+                .acceptingOrders
+                ? styles
+                    .openBadge
+                : styles
+                    .pausedBadge
             }
           >
-            {restaurant.acceptingOrders
+            {restaurant
+              .acceptingOrders
               ? "● ACCEPTING ORDERS"
               : "● ORDERS PAUSED"}
           </div>
         </header>
+
 
         {activeTab ===
           "orders" && (
@@ -1820,12 +2066,15 @@ export default function RestaurantDashboard() {
                 styles.controls
               }
             >
-              <Form method="post">
+              <Form
+                method="post"
+              >
                 <input
                   type="hidden"
                   name="intent"
                   value={
-                    restaurant.acceptingOrders
+                    restaurant
+                      .acceptingOrders
                       ? "pause-orders"
                       : "resume-orders"
                   }
@@ -1837,24 +2086,30 @@ export default function RestaurantDashboard() {
                     isSaving
                   }
                   style={
-                    restaurant.acceptingOrders
-                      ? styles.darkButton
-                      : styles.orangeButton
+                    restaurant
+                      .acceptingOrders
+                      ? styles
+                          .darkButton
+                      : styles
+                          .orangeButton
                   }
                 >
                   {isSaving
                     ? "SAVING..."
-                    : restaurant.acceptingOrders
+                    : restaurant
+                          .acceptingOrders
                       ? "PAUSE ORDERS"
                       : "RESUME ORDERS"}
                 </button>
               </Form>
 
+
               {!soundEnabled ? (
                 <button
                   type="button"
                   style={
-                    styles.orangeButton
+                    styles
+                      .orangeButton
                   }
                   onClick={
                     enableSound
@@ -1874,204 +2129,26 @@ export default function RestaurantDashboard() {
               )}
             </section>
 
+
             {firstNewOrder ? (
               <section
                 style={
                   styles.newOrder
                 }
               >
-                <DeliveryBadge
-                  type={
-                    firstNewOrder.deliveryType
+                <div
+                  style={
+                    styles.newLabel
+                  }
+                >
+                  🔔 NEW ORDER
+                </div>
+
+                <OrderDetails
+                  order={
+                    firstNewOrder
                   }
                 />
-
-                <div
-                  style={
-                    styles.orderTop
-                  }
-                >
-                  <div>
-                    <div
-                      style={
-                        styles.newLabel
-                      }
-                    >
-                      🔔 NEW ORDER
-                    </div>
-
-                    <h2
-                      style={
-                        styles.orderNumber
-                      }
-                    >
-                      {
-                        firstNewOrder.orderNumber
-                      }
-                    </h2>
-
-                    <div
-                      style={
-                        styles.greyText
-                      }
-                    >
-                      Received{" "}
-                      {
-                        firstNewOrder.time
-                      }
-                    </div>
-                  </div>
-
-                  <div
-                    style={
-                      styles.total
-                    }
-                  >
-                    {money(
-                      firstNewOrder.total,
-                    )}
-                  </div>
-                </div>
-
-                <p
-                  style={
-                    styles.customer
-                  }
-                >
-                  Shopify order:{" "}
-                  <strong>
-                    {
-                      firstNewOrder.orderNumber
-                    }
-                  </strong>
-                </p>
-
-                <div
-                  style={
-                    styles.customerDetails
-                  }
-                >
-                  <div>
-                    <strong>
-                      Customer:
-                    </strong>{" "}
-                    {
-                      firstNewOrder.customer ||
-                      "Customer"
-                    }
-                  </div>
-
-                  {firstNewOrder.customerPhone && (
-                    <div>
-                      <strong>
-                        Phone:
-                      </strong>{" "}
-                      {
-                        firstNewOrder.customerPhone
-                      }
-                    </div>
-                  )}
-
-                  {firstNewOrder.customerEmail && (
-                    <div>
-                      <strong>
-                        Email:
-                      </strong>{" "}
-                      {
-                        firstNewOrder.customerEmail
-                      }
-                    </div>
-                  )}
-
-                  {firstNewOrder.deliveryType ===
-                    "DELIVERY" &&
-                    firstNewOrder.customerAddress && (
-                      <div>
-                        <strong>
-                          Delivery
-                          address:
-                        </strong>{" "}
-                        {
-                          firstNewOrder.customerAddress
-                        }
-                      </div>
-                    )}
-                </div>
-
-                <div
-                  style={
-                    styles.items
-                  }
-                >
-                  {firstNewOrder.items.map(
-                    (
-                      item,
-                      index,
-                    ) => (
-                      <div
-                        key={
-                          index
-                        }
-                        style={
-                          styles.item
-                        }
-                      >
-                        <span>
-                          <span
-                            style={
-                              styles.quantity
-                            }
-                          >
-                            {
-                              item.quantity
-                            }{" "}
-                            ×
-                          </span>{" "}
-                          {
-                            item.name
-                          }
-                        </span>
-
-                        <strong>
-                          {money(
-                            item.total,
-                          )}
-                        </strong>
-                      </div>
-                    ),
-                  )}
-                </div>
-
-                <div
-                  style={
-                    styles.orderTotals
-                  }
-                >
-                  <TotalRow
-                    label="Food"
-                    value={money(
-                      firstNewOrder.foodTotal,
-                    )}
-                  />
-
-                  {firstNewOrder.deliveryType ===
-                    "DELIVERY" && (
-                    <TotalRow
-                      label="Delivery"
-                      value={money(
-                        firstNewOrder.delivery,
-                      )}
-                    />
-                  )}
-
-                  <TotalRow
-                    label="Order total"
-                    value={money(
-                      firstNewOrder.total,
-                    )}
-                    bold
-                  />
-                </div>
 
                 <div
                   style={
@@ -2099,19 +2176,22 @@ export default function RestaurantDashboard() {
                       type="hidden"
                       name="orderNumber"
                       value={
-                        firstNewOrder.orderNumber
+                        firstNewOrder
+                          .orderNumber
                       }
                     />
 
                     <button
                       type="submit"
                       style={
-                        styles.acceptButton
+                        styles
+                          .acceptButton
                       }
                     >
                       ✓ ACCEPT ORDER
                     </button>
                   </orderFetcher.Form>
+
 
                   <orderFetcher.Form
                     method="post"
@@ -2134,14 +2214,16 @@ export default function RestaurantDashboard() {
                       type="hidden"
                       name="orderNumber"
                       value={
-                        firstNewOrder.orderNumber
+                        firstNewOrder
+                          .orderNumber
                       }
                     />
 
                     <button
                       type="submit"
                       style={
-                        styles.rejectButton
+                        styles
+                          .rejectButton
                       }
                     >
                       × REJECT ORDER
@@ -2175,6 +2257,7 @@ export default function RestaurantDashboard() {
               </section>
             )}
 
+
             <section
               style={
                 styles.panel
@@ -2187,10 +2270,11 @@ export default function RestaurantDashboard() {
               >
                 <h2
                   style={{
-                    margin: 0,
+                    margin:
+                      0,
                   }}
                 >
-                  Current Orders
+                  Previous Orders
                 </h2>
 
                 <span
@@ -2199,88 +2283,11 @@ export default function RestaurantDashboard() {
                   }
                 >
                   {
-                    currentOrders.length
-                  }
-                </span>
-              </div>
-
-              <p
-                style={
-                  styles.sectionHelp
-                }
-              >
-                Tap an order to view
-                the full details.
-              </p>
-
-              {currentOrders.length ===
-              0 ? (
-                <p
-                  style={
-                    styles.greyText
-                  }
-                >
-                  No current orders.
-                </p>
-              ) : (
-                currentOrders.map(
-                  (order) => (
-                    <OrderListButton
-                      key={
-                        order.id
-                      }
-                      order={
-                        order
-                      }
-                      onClick={() =>
-                        setSelectedOrder(
-                          order,
-                        )
-                      }
-                    />
-                  ),
-                )
-              )}
-            </section>
-
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.titleRow
-                }
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                  }}
-                >
-                  Previous Orders
-                </h2>
-
-                <span
-                  style={
-                    styles.darkCount
-                  }
-                >
-                  {
                     previousOrders.length
                   }
                 </span>
               </div>
 
-              <p
-                style={
-                  styles.sectionHelp
-                }
-              >
-                Tap a previous order
-                to see the customer,
-                items and totals.
-              </p>
 
               {previousOrders.length ===
               0 ? (
@@ -2289,32 +2296,112 @@ export default function RestaurantDashboard() {
                     styles.greyText
                   }
                 >
-                  No previous orders
-                  yet.
+                  No previous
+                  orders.
                 </p>
               ) : (
                 previousOrders.map(
                   (order) => (
-                    <OrderListButton
+                    <button
+                      type="button"
                       key={
                         order.id
                       }
-                      order={
-                        order
+                      style={
+                        styles
+                          .previousOrderButton
                       }
                       onClick={() =>
-                        setSelectedOrder(
-                          order,
+                        setSelectedOrderId(
+                          order.id,
                         )
                       }
-                      previous
-                    />
+                    >
+                      <div
+                        style={{
+                          textAlign:
+                            "left",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            fontSize:
+                              20,
+                          }}
+                        >
+                          {
+                            order.orderNumber
+                          }
+                        </strong>
+
+                        <div
+                          style={
+                            styles.greyText
+                          }
+                        >
+                          {
+                            order.dateTime
+                          }
+                        </div>
+
+                        <div
+                          style={
+                            styles
+                              .previousOrderType
+                          }
+                        >
+                          {order.orderType ===
+                          "pickup"
+                            ? "PICKUP"
+                            : "DELIVERY"}
+                        </div>
+                      </div>
+
+
+                      <div
+                        style={
+                          styles
+                            .previousOrderRight
+                        }
+                      >
+                        <strong>
+                          {money(
+                            order.total,
+                          )}
+                        </strong>
+
+                        <span
+                          style={
+                            order.status ===
+                            "accepted"
+                              ? styles
+                                  .acceptedBadge
+                              : styles
+                                  .rejectedBadge
+                          }
+                        >
+                          {String(
+                            order.status,
+                          ).toUpperCase()}
+                        </span>
+
+                        <span
+                          style={
+                            styles
+                              .viewOrder
+                          }
+                        >
+                          VIEW ›
+                        </span>
+                      </div>
+                    </button>
                   ),
                 )
               )}
             </section>
           </>
         )}
+
 
         {activeTab ===
           "payments" && (
@@ -2338,9 +2425,11 @@ export default function RestaurantDashboard() {
                 }
               >
                 Your Meal Deal Hub
-                earnings and payouts.
+                earnings and
+                payouts.
               </p>
             </section>
+
 
             <div
               style={
@@ -2375,6 +2464,7 @@ export default function RestaurantDashboard() {
                 )}
               />
             </div>
+
 
             <section
               style={
@@ -2423,8 +2513,8 @@ export default function RestaurantDashboard() {
               </p>
 
               <p>
-                Accepted orders this
-                week:{" "}
+                Accepted orders
+                this week:{" "}
                 <strong>
                   {
                     weeklyAcceptedOrders.length
@@ -2443,8 +2533,9 @@ export default function RestaurantDashboard() {
               </p>
 
               <p>
-                Service fees retained
-                by Meal Deal Hub:{" "}
+                Service fees
+                retained by Meal
+                Deal Hub:{" "}
                 <strong>
                   {money(
                     serviceFees,
@@ -2453,139 +2544,33 @@ export default function RestaurantDashboard() {
               </p>
             </section>
 
+
             <section
               style={
                 styles.panel
               }
             >
-              <div
-                style={
-                  styles.titleRow
-                }
+              <h2
+                style={{
+                  marginTop:
+                    0,
+                }}
               >
-                <h2
-                  style={{
-                    margin: 0,
-                  }}
-                >
-                  Payout History
-                </h2>
-
-                <span
-                  style={
-                    styles.darkCount
-                  }
-                >
-                  {
-                    (
-                      savedPayoutHistory ||
-                      []
-                    ).length
-                  }
-                </span>
-              </div>
+                Payout History
+              </h2>
 
               <p
                 style={
-                  styles.sectionHelp
+                  styles.greyText
                 }
               >
-                Completed weekly
-                payment periods are
-                stored here.
+                No completed
+                payouts yet.
               </p>
-
-              {!savedPayoutHistory ||
-              savedPayoutHistory.length ===
-                0 ? (
-                <p
-                  style={
-                    styles.greyText
-                  }
-                >
-                  No completed payout
-                  periods yet.
-                </p>
-              ) : (
-                savedPayoutHistory.map(
-                  (payout) => (
-                    <button
-                      key={
-                        payout.id
-                      }
-                      type="button"
-                      onClick={() =>
-                        setSelectedPayout(
-                          payout,
-                        )
-                      }
-                      style={
-                        styles.payoutHistoryButton
-                      }
-                    >
-                      <div>
-                        <strong
-                          style={{
-                            fontSize:
-                              18,
-                          }}
-                        >
-                          {londonDateLabel(
-                            payout.weekStart,
-                          )}
-                          {" – "}
-                          {londonDateLabel(
-                            payout.weekEnd,
-                          )}
-                        </strong>
-
-                        <div
-                          style={
-                            styles.greyText
-                          }
-                        >
-                          {
-                            payout.acceptedOrderCount
-                          }{" "}
-                          accepted{" "}
-                          {payout.acceptedOrderCount ===
-                          1
-                            ? "order"
-                            : "orders"}
-                        </div>
-                      </div>
-
-                      <div
-                        style={
-                          styles.payoutHistoryRight
-                        }
-                      >
-                        <strong
-                          style={{
-                            fontSize:
-                              20,
-                          }}
-                        >
-                          {money(
-                            payout.restaurantEarnings,
-                          )}
-                        </strong>
-
-                        <span
-                          style={
-                            styles.viewText
-                          }
-                        >
-                          VIEW ›
-                        </span>
-                      </div>
-                    </button>
-                  ),
-                )
-              )}
             </section>
           </>
         )}
+
 
         {activeTab ===
           "account" && (
@@ -2609,9 +2594,11 @@ export default function RestaurantDashboard() {
                 }
               >
                 Your Meal Deal Hub
-                restaurant account.
+                restaurant
+                account.
               </p>
             </section>
+
 
             <section
               style={
@@ -2628,7 +2615,8 @@ export default function RestaurantDashboard() {
               <AccountRow
                 label="Restaurant ID"
                 value={
-                  restaurant.restaurantId
+                  restaurant
+                    .restaurantId
                 }
               />
 
@@ -2642,12 +2630,14 @@ export default function RestaurantDashboard() {
               <AccountRow
                 label="Order status"
                 value={
-                  restaurant.acceptingOrders
+                  restaurant
+                    .acceptingOrders
                     ? "Accepting Orders"
                     : "Orders Paused"
                 }
               />
             </section>
+
 
             <section
               style={
@@ -2656,26 +2646,30 @@ export default function RestaurantDashboard() {
             >
               <h2
                 style={{
-                  marginTop: 0,
+                  marginTop:
+                    0,
                 }}
               >
                 Order Status
               </h2>
 
               <p>
-                Temporarily stop new
-                Meal Deal Hub orders
-                whenever your
-                restaurant is too
-                busy.
+                Temporarily stop
+                new Meal Deal Hub
+                orders whenever
+                your restaurant is
+                too busy.
               </p>
 
-              <Form method="post">
+              <Form
+                method="post"
+              >
                 <input
                   type="hidden"
                   name="intent"
                   value={
-                    restaurant.acceptingOrders
+                    restaurant
+                      .acceptingOrders
                       ? "pause-orders"
                       : "resume-orders"
                   }
@@ -2687,19 +2681,24 @@ export default function RestaurantDashboard() {
                     isSaving
                   }
                   style={
-                    restaurant.acceptingOrders
-                      ? styles.darkButton
-                      : styles.orangeButton
+                    restaurant
+                      .acceptingOrders
+                      ? styles
+                          .darkButton
+                      : styles
+                          .orangeButton
                   }
                 >
                   {isSaving
                     ? "SAVING..."
-                    : restaurant.acceptingOrders
+                    : restaurant
+                          .acceptingOrders
                       ? "PAUSE ORDERS"
                       : "RESUME ORDERS"}
                 </button>
               </Form>
             </section>
+
 
             <section
               style={
@@ -2708,7 +2707,8 @@ export default function RestaurantDashboard() {
             >
               <h2
                 style={{
-                  marginTop: 0,
+                  marginTop:
+                    0,
                 }}
               >
                 Sign Out
@@ -2720,7 +2720,8 @@ export default function RestaurantDashboard() {
                 }
               >
                 Sign out of this
-                restaurant terminal.
+                restaurant
+                terminal.
               </p>
 
               <a
@@ -2734,6 +2735,7 @@ export default function RestaurantDashboard() {
             </section>
           </>
         )}
+
 
         <nav
           style={
@@ -2750,8 +2752,10 @@ export default function RestaurantDashboard() {
             style={
               activeTab ===
               "orders"
-                ? styles.activeNav
-                : styles.navButton
+                ? styles
+                    .activeNav
+                : styles
+                    .navButton
             }
           >
             🧾 ORDERS
@@ -2767,8 +2771,10 @@ export default function RestaurantDashboard() {
             style={
               activeTab ===
               "payments"
-                ? styles.activeNav
-                : styles.navButton
+                ? styles
+                    .activeNav
+                : styles
+                    .navButton
             }
           >
             £ PAYMENTS
@@ -2784,639 +2790,90 @@ export default function RestaurantDashboard() {
             style={
               activeTab ===
               "account"
-                ? styles.activeNav
-                : styles.navButton
+                ? styles
+                    .activeNav
+                : styles
+                    .navButton
             }
           >
             ⚙ ACCOUNT
           </button>
         </nav>
 
-        {selectedOrder && (
-          <OrderDetailsModal
-            order={
-              selectedOrder
-            }
-            onClose={() =>
-              setSelectedOrder(
-                null,
-              )
-            }
-          />
-        )}
 
-        {selectedPayout && (
-          <PayoutDetailsModal
-            payout={
-              selectedPayout
+        {selectedOrder && (
+          <div
+            style={
+              styles.modalOverlay
             }
-            onClose={() =>
-              setSelectedPayout(
+            onClick={() =>
+              setSelectedOrderId(
                 null,
               )
             }
-          />
+          >
+            <div
+              style={
+                styles.orderModal
+              }
+              onClick={(
+                event,
+              ) =>
+                event.stopPropagation()
+              }
+            >
+              <button
+                type="button"
+                style={
+                  styles.closeButton
+                }
+                onClick={() =>
+                  setSelectedOrderId(
+                    null,
+                  )
+                }
+              >
+                ×
+              </button>
+
+              <div
+                style={
+                  styles.modalHeading
+                }
+              >
+                ORDER DETAILS
+              </div>
+
+              <OrderDetails
+                order={
+                  selectedOrder
+                }
+                showStatus={
+                  true
+                }
+              />
+
+              <button
+                type="button"
+                style={
+                  styles.modalDoneButton
+                }
+                onClick={() =>
+                  setSelectedOrderId(
+                    null,
+                  )
+                }
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </main>
   );
 }
 
-function DeliveryBadge({
-  type,
-}) {
-  const isPickup =
-    type === "PICKUP";
-
-  return (
-    <div
-      style={
-        isPickup
-          ? styles.pickupBadge
-          : styles.deliveryBadge
-      }
-    >
-      {isPickup
-        ? "🛍 PICKUP"
-        : "🚗 DELIVERY"}
-    </div>
-  );
-}
-
-function OrderListButton({
-  order,
-  onClick,
-  previous = false,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={
-        styles.orderListButton
-      }
-    >
-      <div
-        style={
-          styles.orderListLeft
-        }
-      >
-        <DeliveryBadge
-          type={
-            order.deliveryType
-          }
-        />
-
-        <strong
-          style={{
-            fontSize: 20,
-          }}
-        >
-          {order.orderNumber}
-        </strong>
-
-        <div
-          style={
-            styles.greyText
-          }
-        >
-          {order.date} at{" "}
-          {order.time}
-        </div>
-
-        <div
-          style={
-            styles.greyText
-          }
-        >
-          {order.customer}
-        </div>
-      </div>
-
-      <div
-        style={
-          styles.orderListRight
-        }
-      >
-        <strong
-          style={{
-            fontSize: 20,
-          }}
-        >
-          {money(
-            order.total,
-          )}
-        </strong>
-
-        <span
-          style={
-            order.status ===
-            "rejected"
-              ? styles.rejectedBadge
-              : previous
-                ? styles.previousBadge
-                : styles.acceptedBadge
-          }
-        >
-          {order.status ===
-          "rejected"
-            ? "REJECTED"
-            : previous
-              ? "PREVIOUS"
-              : "ACCEPTED"}
-        </span>
-
-        <span
-          style={
-            styles.viewText
-          }
-        >
-          VIEW ›
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function OrderDetailsModal({
-  order,
-  onClose,
-}) {
-  return (
-    <div
-      style={
-        styles.modalOverlay
-      }
-      onClick={onClose}
-    >
-      <div
-        style={
-          styles.modal
-        }
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-      >
-        <div
-          style={
-            styles.modalHeader
-          }
-        >
-          <div>
-            <DeliveryBadge
-              type={
-                order.deliveryType
-              }
-            />
-
-            <h2
-              style={
-                styles.modalOrderNumber
-              }
-            >
-              {order.orderNumber}
-            </h2>
-
-            <div
-              style={
-                styles.greyText
-              }
-            >
-              {order.dateTime}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            style={
-              styles.closeButton
-            }
-            aria-label="Close order"
-          >
-            ×
-          </button>
-        </div>
-
-        <div
-          style={
-            styles.modalStatusRow
-          }
-        >
-          <span
-            style={
-              order.status ===
-              "rejected"
-                ? styles.rejectedBadge
-                : styles.acceptedBadge
-            }
-          >
-            {String(
-              order.status,
-            ).toUpperCase()}
-          </span>
-
-          {order.financialStatus && (
-            <span
-              style={
-                styles.paymentBadge
-              }
-            >
-              PAYMENT:{" "}
-              {String(
-                order.financialStatus,
-              )
-                .replaceAll(
-                  "_",
-                  " ",
-                )
-                .toUpperCase()}
-            </span>
-          )}
-        </div>
-
-        <section
-          style={
-            styles.detailSection
-          }
-        >
-          <h3
-            style={
-              styles.detailHeading
-            }
-          >
-            Customer
-          </h3>
-
-          <DetailRow
-            label="Name"
-            value={
-              order.customer ||
-              "Customer"
-            }
-          />
-
-          {order.customerPhone && (
-            <DetailRow
-              label="Phone"
-              value={
-                order.customerPhone
-              }
-            />
-          )}
-
-          {order.customerEmail && (
-            <DetailRow
-              label="Email"
-              value={
-                order.customerEmail
-              }
-            />
-          )}
-
-          {order.deliveryType ===
-            "DELIVERY" &&
-            order.customerAddress && (
-              <DetailRow
-                label="Delivery address"
-                value={
-                  order.customerAddress
-                }
-              />
-            )}
-
-          {order.shippingMethod && (
-            <DetailRow
-              label="Method"
-              value={
-                order.shippingMethod
-              }
-            />
-          )}
-        </section>
-
-        <section
-          style={
-            styles.detailSection
-          }
-        >
-          <h3
-            style={
-              styles.detailHeading
-            }
-          >
-            Order Items
-          </h3>
-
-          <div
-            style={
-              styles.modalItems
-            }
-          >
-            {order.items.map(
-              (
-                item,
-                index,
-              ) => (
-                <div
-                  key={index}
-                  style={
-                    styles.modalItem
-                  }
-                >
-                  <div>
-                    <span
-                      style={
-                        styles.quantity
-                      }
-                    >
-                      {
-                        item.quantity
-                      }{" "}
-                      ×
-                    </span>{" "}
-                    <strong>
-                      {
-                        item.name
-                      }
-                    </strong>
-                  </div>
-
-                  <strong>
-                    {money(
-                      item.total,
-                    )}
-                  </strong>
-                </div>
-              ),
-            )}
-          </div>
-        </section>
-
-        <section
-          style={
-            styles.detailSection
-          }
-        >
-          <h3
-            style={
-              styles.detailHeading
-            }
-          >
-            Order Total
-          </h3>
-
-          <TotalRow
-            label="Food"
-            value={money(
-              order.foodTotal,
-            )}
-          />
-
-          {order.deliveryType ===
-            "DELIVERY" && (
-            <TotalRow
-              label="Delivery"
-              value={money(
-                order.delivery,
-              )}
-            />
-          )}
-
-          <TotalRow
-            label="Total paid by customer"
-            value={money(
-              order.total,
-            )}
-            bold
-          />
-        </section>
-
-        <button
-          type="button"
-          onClick={onClose}
-          style={
-            styles.fullDarkButton
-          }
-        >
-          CLOSE ORDER
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function PayoutDetailsModal({
-  payout,
-  onClose,
-}) {
-  return (
-    <div
-      style={
-        styles.modalOverlay
-      }
-      onClick={onClose}
-    >
-      <div
-        style={
-          styles.modal
-        }
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-      >
-        <div
-          style={
-            styles.modalHeader
-          }
-        >
-          <div>
-            <div
-              style={
-                styles.logo
-              }
-            >
-              PAYOUT HISTORY
-            </div>
-
-            <h2
-              style={
-                styles.modalOrderNumber
-              }
-            >
-              {money(
-                payout.restaurantEarnings,
-              )}
-            </h2>
-
-            <div
-              style={
-                styles.greyText
-              }
-            >
-              {londonDateLabel(
-                payout.weekStart,
-              )}
-              {" – "}
-              {londonDateLabel(
-                payout.weekEnd,
-              )}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            style={
-              styles.closeButton
-            }
-            aria-label="Close payout"
-          >
-            ×
-          </button>
-        </div>
-
-        <section
-          style={
-            styles.detailSection
-          }
-        >
-          <h3
-            style={
-              styles.detailHeading
-            }
-          >
-            Weekly Summary
-          </h3>
-
-          <DetailRow
-            label="Accepted orders"
-            value={
-              payout.acceptedOrderCount
-            }
-          />
-
-          <DetailRow
-            label="Meal deal sales"
-            value={money(
-              payout.foodSales,
-            )}
-          />
-
-          <DetailRow
-            label="Delivery"
-            value={money(
-              payout.deliveryIncome,
-            )}
-          />
-
-          <DetailRow
-            label="Meal Deal Hub commission"
-            value={money(
-              payout.commission,
-            )}
-          />
-
-          <DetailRow
-            label="Service fees retained by Meal Deal Hub"
-            value={money(
-              payout.serviceFees,
-            )}
-          />
-
-          <DetailRow
-            label="Restaurant receives"
-            value={money(
-              payout.restaurantEarnings,
-            )}
-            bold
-          />
-        </section>
-
-        <section
-          style={
-            styles.detailSection
-          }
-        >
-          <DetailRow
-            label="Expected payout date"
-            value={
-              londonDateLabel(
-                payout.payoutDate,
-              )
-            }
-          />
-        </section>
-
-        <button
-          type="button"
-          onClick={onClose}
-          style={
-            styles.fullDarkButton
-          }
-        >
-          CLOSE
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TotalRow({
-  label,
-  value,
-  bold = false,
-}) {
-  return (
-    <div
-      style={
-        bold
-          ? styles.totalRowBold
-          : styles.totalRow
-      }
-    >
-      <span>
-        {label}
-      </span>
-
-      <span>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-  bold = false,
-}) {
-  return (
-    <div
-      style={
-        styles.detailRow
-      }
-    >
-      <span
-        style={
-          styles.greyText
-        }
-      >
-        {label}
-      </span>
-
-      <strong
-        style={
-          bold
-            ? styles.detailStrong
-            : undefined
-        }
-      >
-        {value}
-      </strong>
-    </div>
-  );
-}
 
 function PaymentCard({
   title,
@@ -3447,6 +2904,7 @@ function PaymentCard({
   );
 }
 
+
 function AccountRow({
   label,
   value,
@@ -3472,641 +2930,1089 @@ function AccountRow({
   );
 }
 
+
 const styles = {
   page: {
-    minHeight: "100vh",
-    background: "#f4f4f4",
+    minHeight:
+      "100vh",
+
+    background:
+      "#f4f4f4",
+
     fontFamily:
       "Arial, Helvetica, sans-serif",
-    color: "#171717",
-    padding: 20,
+
+    color:
+      "#171717",
+
+    padding:
+      20,
   },
 
   container: {
-    maxWidth: 900,
-    margin: "0 auto",
+    maxWidth:
+      900,
+
+    margin:
+      "0 auto",
   },
 
   header: {
-    background: "#171717",
-    color: "#fff",
-    borderRadius: 18,
-    padding: 24,
-    display: "flex",
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    borderRadius:
+      18,
+
+    padding:
+      24,
+
+    display:
+      "flex",
+
     justifyContent:
       "space-between",
-    alignItems: "center",
-    gap: 20,
-    flexWrap: "wrap",
-    marginBottom: 15,
+
+    alignItems:
+      "center",
+
+    gap:
+      20,
+
+    flexWrap:
+      "wrap",
+
+    marginBottom:
+      15,
   },
 
   logo: {
-    color: "#f05a28",
-    fontWeight: 900,
-    letterSpacing: 1.5,
-    marginBottom: 7,
+    color:
+      "#f05a28",
+
+    fontWeight:
+      900,
+
+    letterSpacing:
+      1.5,
+
+    marginBottom:
+      7,
   },
 
   restaurantName: {
-    margin: "0 0 6px",
-    fontSize: 28,
+    margin:
+      "0 0 6px",
+
+    fontSize:
+      28,
   },
 
   location: {
-    color: "#bbb",
-    fontSize: 13,
+    color:
+      "#bbb",
+
+    fontSize:
+      13,
   },
 
   openBadge: {
-    background: "#e8f5e9",
-    color: "#137333",
-    padding: "10px 14px",
-    borderRadius: 30,
-    fontWeight: 800,
+    background:
+      "#e8f5e9",
+
+    color:
+      "#137333",
+
+    padding:
+      "10px 14px",
+
+    borderRadius:
+      30,
+
+    fontWeight:
+      800,
   },
 
   pausedBadge: {
-    background: "#fdecec",
-    color: "#b42318",
-    padding: "10px 14px",
-    borderRadius: 30,
-    fontWeight: 800,
+    background:
+      "#fdecec",
+
+    color:
+      "#b42318",
+
+    padding:
+      "10px 14px",
+
+    borderRadius:
+      30,
+
+    fontWeight:
+      800,
   },
 
   controls: {
-    background: "#fff",
-    padding: 15,
-    borderRadius: 14,
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    marginBottom: 15,
-    border: "1px solid #ddd",
+    background:
+      "#fff",
+
+    padding:
+      15,
+
+    borderRadius:
+      14,
+
+    display:
+      "flex",
+
+    gap:
+      10,
+
+    flexWrap:
+      "wrap",
+
+    marginBottom:
+      15,
+
+    border:
+      "1px solid #ddd",
   },
 
   darkButton: {
-    background: "#171717",
-    color: "#fff",
-    border: 0,
-    borderRadius: 10,
-    padding: "14px 20px",
-    fontWeight: 800,
-    cursor: "pointer",
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    border:
+      0,
+
+    borderRadius:
+      10,
+
+    padding:
+      "14px 20px",
+
+    fontWeight:
+      800,
+
+    cursor:
+      "pointer",
   },
 
   orangeButton: {
-    background: "#f05a28",
-    color: "#fff",
-    border: 0,
-    borderRadius: 10,
-    padding: "14px 20px",
-    fontWeight: 800,
-    cursor: "pointer",
+    background:
+      "#f05a28",
+
+    color:
+      "#fff",
+
+    border:
+      0,
+
+    borderRadius:
+      10,
+
+    padding:
+      "14px 20px",
+
+    fontWeight:
+      800,
+
+    cursor:
+      "pointer",
   },
 
   soundOn: {
-    padding: "14px 20px",
-    color: "#137333",
-    fontWeight: 800,
+    padding:
+      "14px 20px",
+
+    color:
+      "#137333",
+
+    fontWeight:
+      800,
   },
 
   newOrder: {
-    background: "#fff",
+    background:
+      "#fff",
+
     border:
       "4px solid #f05a28",
-    borderRadius: 18,
-    padding: 25,
-    marginBottom: 18,
-  },
 
-  deliveryBadge: {
-    display: "inline-block",
-    background: "#171717",
-    color: "#fff",
-    borderRadius: 8,
-    padding: "9px 13px",
-    fontWeight: 900,
-    fontSize: 14,
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
+    borderRadius:
+      18,
 
-  pickupBadge: {
-    display: "inline-block",
-    background: "#f05a28",
-    color: "#fff",
-    borderRadius: 8,
-    padding: "9px 13px",
-    fontWeight: 900,
-    fontSize: 14,
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
+    padding:
+      25,
 
-  orderTop: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    gap: 20,
-    flexWrap: "wrap",
+    marginBottom:
+      18,
   },
 
   newLabel: {
-    color: "#f05a28",
-    fontSize: 20,
-    fontWeight: 900,
+    color:
+      "#f05a28",
+
+    fontSize:
+      20,
+
+    fontWeight:
+      900,
+
+    marginBottom:
+      14,
+  },
+
+  detailTop: {
+    display:
+      "flex",
+
+    justifyContent:
+      "space-between",
+
+    gap:
+      20,
+
+    flexWrap:
+      "wrap",
+
+    alignItems:
+      "flex-start",
+  },
+
+  pickupBadge: {
+    display:
+      "inline-block",
+
+    background:
+      "#fff3e8",
+
+    color:
+      "#d84a18",
+
+    border:
+      "2px solid #f05a28",
+
+    borderRadius:
+      30,
+
+    padding:
+      "8px 14px",
+
+    fontSize:
+      15,
+
+    fontWeight:
+      900,
+
+    letterSpacing:
+      0.5,
+  },
+
+  deliveryBadge: {
+    display:
+      "inline-block",
+
+    background:
+      "#eaf2ff",
+
+    color:
+      "#174ea6",
+
+    border:
+      "2px solid #174ea6",
+
+    borderRadius:
+      30,
+
+    padding:
+      "8px 14px",
+
+    fontSize:
+      15,
+
+    fontWeight:
+      900,
+
+    letterSpacing:
+      0.5,
   },
 
   orderNumber: {
-    fontSize: 32,
-    margin: "8px 0 4px",
+    fontSize:
+      32,
+
+    margin:
+      "10px 0 4px",
   },
 
   total: {
-    fontSize: 38,
-    fontWeight: 900,
-  },
+    fontSize:
+      38,
 
-  customer: {
-    fontSize: 17,
-    marginTop: 24,
+    fontWeight:
+      900,
   },
 
   customerDetails: {
-    marginBottom: 16,
-    lineHeight: 1.6,
+    marginTop:
+      22,
+
+    marginBottom:
+      16,
+
+    lineHeight:
+      1.7,
+
+    fontSize:
+      16,
   },
 
   items: {
-    background: "#f7f7f7",
-    borderRadius: 12,
-    padding: 18,
-    marginTop: 18,
+    background:
+      "#f7f7f7",
+
+    borderRadius:
+      12,
+
+    padding:
+      18,
+
+    marginTop:
+      18,
   },
 
   item: {
-    fontSize: 19,
-    fontWeight: 700,
-    padding: "10px 0",
-    display: "flex",
-    justifyContent:
-      "space-between",
-    gap: 15,
+    fontSize:
+      21,
+
+    fontWeight:
+      700,
+
+    padding:
+      "8px 0",
   },
 
   quantity: {
-    color: "#f05a28",
+    color:
+      "#f05a28",
   },
 
-  orderTotals: {
-    marginTop: 18,
+  orderBreakdown: {
+    marginTop:
+      18,
+
     borderTop:
-      "1px solid #ddd",
-    paddingTop: 10,
+      "1px solid #eee",
+
+    paddingTop:
+      12,
   },
 
-  totalRow: {
-    display: "flex",
+  breakdownRow: {
+    display:
+      "flex",
+
     justifyContent:
       "space-between",
-    gap: 20,
-    padding: "7px 0",
+
+    gap:
+      20,
+
+    padding:
+      "7px 0",
   },
 
-  totalRowBold: {
-    display: "flex",
+  breakdownTotal: {
+    display:
+      "flex",
+
     justifyContent:
       "space-between",
-    gap: 20,
-    padding: "12px 0 4px",
+
+    gap:
+      20,
+
+    padding:
+      "12px 0 0",
+
+    marginTop:
+      6,
+
     borderTop:
-      "1px solid #ddd",
-    marginTop: 5,
-    fontSize: 19,
-    fontWeight: 900,
+      "2px solid #171717",
+
+    fontSize:
+      18,
   },
 
   actions: {
-    display: "grid",
+    display:
+      "grid",
+
     gridTemplateColumns:
       "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: 12,
-    marginTop: 25,
+
+    gap:
+      12,
+
+    marginTop:
+      25,
   },
 
   acceptButton: {
-    width: "100%",
-    minHeight: 64,
-    background: "#171717",
-    color: "#fff",
-    border: 0,
-    borderRadius: 12,
-    fontSize: 18,
-    fontWeight: 900,
-    cursor: "pointer",
+    width:
+      "100%",
+
+    minHeight:
+      64,
+
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    border:
+      0,
+
+    borderRadius:
+      12,
+
+    fontSize:
+      18,
+
+    fontWeight:
+      900,
+
+    cursor:
+      "pointer",
   },
 
   rejectButton: {
-    width: "100%",
-    minHeight: 64,
-    background: "#fff",
-    color: "#b42318",
+    width:
+      "100%",
+
+    minHeight:
+      64,
+
+    background:
+      "#fff",
+
+    color:
+      "#b42318",
+
     border:
       "2px solid #b42318",
-    borderRadius: 12,
-    fontSize: 18,
-    fontWeight: 900,
-    cursor: "pointer",
+
+    borderRadius:
+      12,
+
+    fontSize:
+      18,
+
+    fontWeight:
+      900,
+
+    cursor:
+      "pointer",
   },
 
   waiting: {
-    background: "#fff",
-    borderRadius: 18,
-    padding: 50,
-    textAlign: "center",
-    marginBottom: 18,
+    background:
+      "#fff",
+
+    borderRadius:
+      18,
+
+    padding:
+      50,
+
+    textAlign:
+      "center",
+
+    marginBottom:
+      18,
   },
 
   tick: {
-    width: 55,
-    height: 55,
-    borderRadius: "50%",
-    background: "#e8f5e9",
-    color: "#137333",
-    display: "grid",
-    placeItems: "center",
-    margin: "0 auto",
-    fontSize: 28,
-    fontWeight: 900,
+    width:
+      55,
+
+    height:
+      55,
+
+    borderRadius:
+      "50%",
+
+    background:
+      "#e8f5e9",
+
+    color:
+      "#137333",
+
+    display:
+      "grid",
+
+    placeItems:
+      "center",
+
+    margin:
+      "0 auto",
+
+    fontSize:
+      28,
+
+    fontWeight:
+      900,
   },
 
   panel: {
-    background: "#fff",
-    borderRadius: 16,
-    padding: 22,
-    border: "1px solid #ddd",
-    marginBottom: 18,
+    background:
+      "#fff",
+
+    borderRadius:
+      16,
+
+    padding:
+      22,
+
+    border:
+      "1px solid #ddd",
+
+    marginBottom:
+      18,
   },
 
   pageHeading: {
-    background: "#fff",
-    borderRadius: 16,
-    padding: 22,
-    border: "1px solid #ddd",
-    marginBottom: 18,
+    background:
+      "#fff",
+
+    borderRadius:
+      16,
+
+    padding:
+      22,
+
+    border:
+      "1px solid #ddd",
+
+    marginBottom:
+      18,
   },
 
   titleRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    marginBottom: 8,
-  },
+    display:
+      "flex",
 
-  sectionHelp: {
-    color: "#777",
-    fontSize: 14,
-    marginTop: 0,
-    marginBottom: 14,
+    gap:
+      10,
+
+    alignItems:
+      "center",
+
+    marginBottom:
+      15,
   },
 
   count: {
-    background: "#f05a28",
-    color: "#fff",
-    minWidth: 26,
-    height: 26,
-    padding: "0 6px",
-    borderRadius: 20,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 800,
+    background:
+      "#f05a28",
+
+    color:
+      "#fff",
+
+    minWidth:
+      26,
+
+    height:
+      26,
+
+    padding:
+      "0 7px",
+
+    borderRadius:
+      30,
+
+    display:
+      "grid",
+
+    placeItems:
+      "center",
+
+    fontWeight:
+      800,
   },
 
-  darkCount: {
-    background: "#171717",
-    color: "#fff",
-    minWidth: 26,
-    height: 26,
-    padding: "0 6px",
-    borderRadius: 20,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 800,
-  },
+  previousOrderButton: {
+    width:
+      "100%",
 
-  orderListButton: {
-    width: "100%",
-    background: "#fff",
-    color: "#171717",
-    border: 0,
+    background:
+      "#fff",
+
+    border:
+      0,
+
     borderTop:
       "1px solid #eee",
-    padding: "18px 0",
-    display: "flex",
+
+    padding:
+      "18px 0",
+
+    display:
+      "flex",
+
     justifyContent:
       "space-between",
-    alignItems: "center",
-    gap: 15,
-    cursor: "pointer",
-    textAlign: "left",
-    fontFamily: "inherit",
+
+    alignItems:
+      "center",
+
+    gap:
+      20,
+
+    cursor:
+      "pointer",
+
+    color:
+      "#171717",
+
+    fontFamily:
+      "inherit",
   },
 
-  orderListLeft: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    gap: 4,
+  previousOrderRight: {
+    display:
+      "flex",
+
+    flexDirection:
+      "column",
+
+    alignItems:
+      "flex-end",
+
+    gap:
+      7,
   },
 
-  orderListRight: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 7,
-    textAlign: "right",
+  previousOrderType: {
+    fontSize:
+      12,
+
+    fontWeight:
+      900,
+
+    color:
+      "#f05a28",
+
+    marginTop:
+      5,
+  },
+
+  viewOrder: {
+    color:
+      "#f05a28",
+
+    fontWeight:
+      900,
+
+    fontSize:
+      12,
   },
 
   acceptedBadge: {
-    background: "#e8f5e9",
-    color: "#137333",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
+    display:
+      "inline-block",
+
+    background:
+      "#e8f5e9",
+
+    color:
+      "#137333",
+
+    padding:
+      "8px 12px",
+
+    borderRadius:
+      30,
+
+    fontWeight:
+      800,
+
+    fontSize:
+      12,
   },
 
   rejectedBadge: {
-    background: "#fdecec",
-    color: "#b42318",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
-  },
+    display:
+      "inline-block",
 
-  previousBadge: {
-    background: "#eeeeee",
-    color: "#444",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
-  },
+    background:
+      "#fdecec",
 
-  paymentBadge: {
-    background: "#f3f3f3",
-    color: "#444",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
-  },
+    color:
+      "#b42318",
 
-  viewText: {
-    color: "#f05a28",
-    fontSize: 12,
-    fontWeight: 900,
+    padding:
+      "8px 12px",
+
+    borderRadius:
+      30,
+
+    fontWeight:
+      800,
+
+    fontSize:
+      12,
   },
 
   grid: {
-    display: "grid",
+    display:
+      "grid",
+
     gridTemplateColumns:
       "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: 14,
-    marginBottom: 18,
+
+    gap:
+      14,
+
+    marginBottom:
+      18,
   },
 
   card: {
-    background: "#fff",
-    border: "1px solid #ddd",
-    borderRadius: 14,
-    padding: 22,
+    background:
+      "#fff",
+
+    border:
+      "1px solid #ddd",
+
+    borderRadius:
+      14,
+
+    padding:
+      22,
   },
 
   cardTitle: {
-    color: "#666",
-    fontSize: 13,
-    marginBottom: 10,
+    color:
+      "#666",
+
+    fontSize:
+      13,
+
+    marginBottom:
+      10,
   },
 
   cardValue: {
-    fontSize: 28,
-    fontWeight: 900,
+    fontSize:
+      28,
+
+    fontWeight:
+      900,
   },
 
   payout: {
-    background: "#171717",
-    color: "#fff",
-    borderRadius: 16,
-    padding: 25,
-    marginBottom: 18,
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    borderRadius:
+      16,
+
+    padding:
+      25,
+
+    marginBottom:
+      18,
   },
 
   smallWhite: {
-    fontSize: 13,
-    fontWeight: 800,
+    fontSize:
+      13,
+
+    fontWeight:
+      800,
   },
 
   payoutAmount: {
-    color: "#f05a28",
-    fontSize: 40,
-    fontWeight: 900,
-    margin: "10px 0 20px",
-  },
+    color:
+      "#f05a28",
 
-  payoutHistoryButton: {
-    width: "100%",
-    background: "#fff",
-    color: "#171717",
-    border: 0,
-    borderTop:
-      "1px solid #eee",
-    padding: "18px 0",
-    display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems: "center",
-    gap: 15,
-    textAlign: "left",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
+    fontSize:
+      40,
 
-  payoutHistoryRight: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 6,
+    fontWeight:
+      900,
+
+    margin:
+      "10px 0 20px",
   },
 
   accountRow: {
-    padding: "15px 0",
+    padding:
+      "15px 0",
+
     borderBottom:
       "1px solid #eee",
-    display: "flex",
+
+    display:
+      "flex",
+
     justifyContent:
       "space-between",
-    gap: 20,
+
+    gap:
+      20,
   },
 
   greyText: {
-    color: "#666",
+    color:
+      "#666",
   },
 
   logoutButton: {
-    display: "inline-block",
-    background: "#171717",
-    color: "#fff",
-    textDecoration: "none",
-    borderRadius: 10,
-    padding: "14px 22px",
-    fontWeight: 800,
+    display:
+      "inline-block",
+
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    textDecoration:
+      "none",
+
+    borderRadius:
+      10,
+
+    padding:
+      "14px 22px",
+
+    fontWeight:
+      800,
   },
 
   bottomNav: {
-    background: "#171717",
-    borderRadius: 14,
-    padding: 8,
-    display: "grid",
+    background:
+      "#171717",
+
+    borderRadius:
+      14,
+
+    padding:
+      8,
+
+    display:
+      "grid",
+
     gridTemplateColumns:
       "repeat(3, 1fr)",
-    gap: 6,
-    position: "sticky",
-    bottom: 10,
-    zIndex: 20,
+
+    gap:
+      6,
+
+    position:
+      "sticky",
+
+    bottom:
+      10,
+
+    zIndex:
+      20,
   },
 
   activeNav: {
-    background: "#f05a28",
-    color: "#fff",
-    border: 0,
-    borderRadius: 9,
-    padding: "16px 8px",
-    fontWeight: 900,
-    cursor: "pointer",
+    background:
+      "#f05a28",
+
+    color:
+      "#fff",
+
+    border:
+      0,
+
+    borderRadius:
+      9,
+
+    padding:
+      "16px 8px",
+
+    fontWeight:
+      900,
+
+    cursor:
+      "pointer",
   },
 
   navButton: {
-    background: "transparent",
-    color: "#fff",
-    border: 0,
-    borderRadius: 9,
-    padding: "16px 8px",
-    fontWeight: 900,
-    cursor: "pointer",
+    background:
+      "transparent",
+
+    color:
+      "#fff",
+
+    border:
+      0,
+
+    borderRadius:
+      9,
+
+    padding:
+      "16px 8px",
+
+    fontWeight:
+      900,
+
+    cursor:
+      "pointer",
   },
 
   modalOverlay: {
-    position: "fixed",
-    inset: 0,
+    position:
+      "fixed",
+
+    inset:
+      0,
+
     background:
-      "rgba(0, 0, 0, 0.65)",
-    zIndex: 1000,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 18,
+      "rgba(0,0,0,0.65)",
+
+    zIndex:
+      1000,
+
+    display:
+      "flex",
+
+    alignItems:
+      "center",
+
+    justifyContent:
+      "center",
+
+    padding:
+      20,
+
+    overflowY:
+      "auto",
   },
 
-  modal: {
-    width: "100%",
-    maxWidth: 700,
-    maxHeight: "90vh",
-    overflowY: "auto",
-    background: "#fff",
-    borderRadius: 18,
-    padding: 24,
+  orderModal: {
+    position:
+      "relative",
+
+    width:
+      "100%",
+
+    maxWidth:
+      720,
+
+    maxHeight:
+      "90vh",
+
+    overflowY:
+      "auto",
+
+    background:
+      "#fff",
+
+    borderRadius:
+      18,
+
+    padding:
+      26,
+
     boxShadow:
       "0 20px 60px rgba(0,0,0,0.3)",
   },
 
-  modalHeader: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems: "flex-start",
-    gap: 20,
-  },
-
-  modalOrderNumber: {
-    margin: "4px 0",
-    fontSize: 30,
-  },
-
   closeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: "50%",
-    border: 0,
-    background: "#171717",
-    color: "#fff",
-    fontSize: 28,
-    lineHeight: 1,
-    cursor: "pointer",
+    position:
+      "absolute",
+
+    top:
+      12,
+
+    right:
+      14,
+
+    width:
+      42,
+
+    height:
+      42,
+
+    borderRadius:
+      "50%",
+
+    border:
+      0,
+
+    background:
+      "#171717",
+
+    color:
+      "#fff",
+
+    fontSize:
+      26,
+
+    cursor:
+      "pointer",
   },
 
-  modalStatusRow: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    marginTop: 18,
-    marginBottom: 18,
+  modalHeading: {
+    color:
+      "#f05a28",
+
+    fontWeight:
+      900,
+
+    letterSpacing:
+      1,
+
+    marginBottom:
+      18,
+
+    paddingRight:
+      50,
   },
 
-  detailSection: {
-    borderTop:
-      "1px solid #e5e5e5",
-    paddingTop: 18,
-    marginTop: 18,
-  },
+  modalDoneButton: {
+    width:
+      "100%",
 
-  detailHeading: {
-    margin:
-      "0 0 12px",
-    fontSize: 18,
-  },
+    marginTop:
+      24,
 
-  detailRow: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    gap: 25,
-    padding: "8px 0",
-    lineHeight: 1.4,
-  },
+    background:
+      "#171717",
 
-  detailStrong: {
-    fontSize: 18,
-  },
+    color:
+      "#fff",
 
-  modalItems: {
-    background: "#f7f7f7",
-    borderRadius: 12,
-    padding: "8px 16px",
-  },
+    border:
+      0,
 
-  modalItem: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    gap: 20,
-    padding: "12px 0",
-    borderBottom:
-      "1px solid #e5e5e5",
-  },
+    borderRadius:
+      10,
 
-  fullDarkButton: {
-    width: "100%",
-    background: "#171717",
-    color: "#fff",
-    border: 0,
-    borderRadius: 11,
-    padding: 16,
-    marginTop: 24,
-    fontSize: 15,
-    fontWeight: 900,
-    cursor: "pointer",
+    padding:
+      "15px 20px",
+
+    fontWeight:
+      900,
+
+    cursor:
+      "pointer",
   },
 };
