@@ -347,6 +347,7 @@ async function getShopifyOrders(
       query RestaurantOrders {
         orders(
           first: 50
+          sortKey: CREATED_AT
           reverse: true
         ) {
           nodes {
@@ -1248,14 +1249,6 @@ export default function RestaurantDashboard() {
     shopifyOrders || [],
   );
 
-  /*
-    Order sound is ON by default.
-
-    Browsers still require one user interaction
-    before they allow audio. The first click,
-    tap or key press on the dashboard unlocks
-    the AudioContext automatically.
-  */
   const [
     soundEnabled,
     setSoundEnabled,
@@ -1286,13 +1279,6 @@ export default function RestaurantDashboard() {
     );
   }, [shopifyOrders]);
 
-  /*
-    Remember whether this restaurant terminal
-    previously turned order sound off.
-
-    If there is no saved setting, sound defaults
-    to ON.
-  */
   useEffect(() => {
     try {
       const savedSetting =
@@ -1481,7 +1467,7 @@ export default function RestaurantDashboard() {
         "on",
       );
     } catch {
-      // Ignore local storage errors.
+      // Ignore storage errors.
     }
 
     try {
@@ -1524,20 +1510,12 @@ export default function RestaurantDashboard() {
         "off",
       );
     } catch {
-      // Ignore local storage errors.
+      // Ignore storage errors.
     }
 
     stopAlarm();
   }
 
-  /*
-    Automatically unlock browser audio on the
-    restaurant user's first interaction with the
-    dashboard.
-
-    They do NOT have to remember to press an
-    "Enable Sound" button.
-  */
   useEffect(() => {
     function unlockOrderSound() {
       if (!soundEnabledRef.current) {
@@ -1612,10 +1590,6 @@ export default function RestaurantDashboard() {
     };
   }, []);
 
-  /*
-    Ring continuously while there is an
-    unanswered new order and sound is enabled.
-  */
   useEffect(() => {
     stopAlarm();
 
