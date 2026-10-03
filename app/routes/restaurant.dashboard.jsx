@@ -450,10 +450,6 @@ async function getShopifyOrders(
           return null;
         }
 
-        // ==========================================
-        // LINE-ITEM RESTAURANT IDS
-        // ==========================================
-
         const foodRestaurantIds =
           foodItems
             .map((item) =>
@@ -481,14 +477,6 @@ async function getShopifyOrders(
         const noFoodRestaurantId =
           foodRestaurantIds.length === 0;
 
-        // ==========================================
-        // ORDER-LEVEL RESTAURANT ID
-        //
-        // This is the backup written by
-        // restaurant-cart-lock.js through
-        // Shopify cart attributes.
-        // ==========================================
-
         const orderRestaurantId =
           getAttribute(
             order.customAttributes,
@@ -507,41 +495,18 @@ async function getShopifyOrders(
           Boolean(orderRestaurantId) &&
           !orderRestaurantMatches;
 
-        // ==========================================
-        // ORDER TYPE / SHIPPING
-        // ==========================================
-
         const orderType =
           getOrderType(order);
 
         const shippingLocation =
           getShippingLocation(order);
 
-        // ==========================================
-        // MATCHING PRIORITY
-        //
-        // 1. Food line Restaurant ID
-        // 2. Order-level Restaurant ID
-        // 3. Safe shipping/name fallback
-        // ==========================================
-
         let belongsToRestaurant =
           matchingItems.length > 0;
 
-        /*
-          If food lines contain explicit
-          Restaurant IDs, those are authoritative.
-
-          We do not use fallbacks to override an
-          explicit line-item Restaurant ID.
-        */
         const hasExplicitFoodRestaurant =
           foodRestaurantIds.length > 0;
 
-        /*
-          Only use the order-level backup when the
-          food lines have NO Restaurant ID.
-        */
         if (
           !hasExplicitFoodRestaurant &&
           orderRestaurantMatches
@@ -549,11 +514,6 @@ async function getShopifyOrders(
           belongsToRestaurant = true;
         }
 
-        /*
-          If the order-level backup explicitly
-          belongs to another restaurant, do not
-          allow restaurant-name fallbacks.
-        */
         const canUseNameFallback =
           noFoodRestaurantId &&
           !orderHasDifferentRestaurant &&
@@ -583,10 +543,6 @@ async function getShopifyOrders(
           belongsToRestaurant = true;
         }
 
-        // ==========================================
-        // DEBUG
-        // ==========================================
-
         console.log(
           "ORDER MATCH CHECK:",
           {
@@ -613,16 +569,6 @@ async function getShopifyOrders(
           return null;
         }
 
-        /*
-          If line-item Restaurant IDs exist,
-          only use the matching restaurant's
-          items.
-
-          If the order-level Restaurant ID was
-          required because line properties were
-          missing, all non-service-fee items
-          belong to this restaurant.
-        */
         const restaurantFoodItems =
           matchingItems.length > 0
             ? matchingItems
@@ -1302,9 +1248,22 @@ export default function RestaurantDashboard() {
     shopifyOrders || [],
   );
 
+  /*
+    Order sound is ON by default.
+
+    Browsers still require one user interaction
+    before they allow audio. The first click,
+    tap or key press on the dashboard unlocks
+    the AudioContext automatically.
+  */
   const [
     soundEnabled,
     setSoundEnabled,
+  ] = useState(true);
+
+  const [
+    soundUnlocked,
+    setSoundUnlocked,
   ] = useState(false);
 
   const [
@@ -1318,11 +1277,41 @@ export default function RestaurantDashboard() {
   const alarmTimerRef =
     useRef(null);
 
+  const soundEnabledRef =
+    useRef(true);
+
   useEffect(() => {
     setOrders(
       shopifyOrders || [],
     );
   }, [shopifyOrders]);
+
+  /*
+    Remember whether this restaurant terminal
+    previously turned order sound off.
+
+    If there is no saved setting, sound defaults
+    to ON.
+  */
+  useEffect(() => {
+    try {
+      const savedSetting =
+        window.localStorage.getItem(
+          "mdh_order_sound",
+        );
+
+      if (savedSetting === "off") {
+        setSoundEnabled(false);
+        soundEnabledRef.current = false;
+      } else {
+        setSoundEnabled(true);
+        soundEnabledRef.current = true;
+      }
+    } catch {
+      setSoundEnabled(true);
+      soundEnabledRef.current = true;
+    }
+  }, []);
 
   const restaurantOrders =
     orders.filter(
@@ -1418,6 +1407,10 @@ export default function RestaurantDashboard() {
         window.AudioContext ||
         window.webkitAudioContext;
 
+      if (!AudioContext) {
+        return;
+      }
+
       if (
         !audioContextRef.current
       ) {
@@ -1480,15 +1473,156 @@ export default function RestaurantDashboard() {
 
   function enableSound() {
     setSoundEnabled(true);
-    makeAlarmSound();
+    soundEnabledRef.current = true;
+
+    try {
+      window.localStorage.setItem(
+        "mdh_order_sound",
+        "on",
+      );
+    } catch {
+      // Ignore local storage errors.
+    }
+
+    try {
+      const AudioContext =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (
+        AudioContext &&
+        !audioContextRef.current
+      ) {
+        audioContextRef.current =
+          new AudioContext();
+      }
+
+      if (
+        audioContextRef.current?.state ===
+        "suspended"
+      ) {
+        audioContextRef.current.resume();
+      }
+
+      setSoundUnlocked(true);
+      makeAlarmSound();
+    } catch (error) {
+      console.log(
+        "Order sound unavailable",
+        error,
+      );
+    }
   }
 
+  function disableSound() {
+    setSoundEnabled(false);
+    soundEnabledRef.current = false;
+
+    try {
+      window.localStorage.setItem(
+        "mdh_order_sound",
+        "off",
+      );
+    } catch {
+      // Ignore local storage errors.
+    }
+
+    stopAlarm();
+  }
+
+  /*
+    Automatically unlock browser audio on the
+    restaurant user's first interaction with the
+    dashboard.
+
+    They do NOT have to remember to press an
+    "Enable Sound" button.
+  */
+  useEffect(() => {
+    function unlockOrderSound() {
+      if (!soundEnabledRef.current) {
+        return;
+      }
+
+      try {
+        const AudioContext =
+          window.AudioContext ||
+          window.webkitAudioContext;
+
+        if (!AudioContext) {
+          return;
+        }
+
+        if (
+          !audioContextRef.current
+        ) {
+          audioContextRef.current =
+            new AudioContext();
+        }
+
+        const context =
+          audioContextRef.current;
+
+        if (
+          context.state ===
+          "suspended"
+        ) {
+          context.resume();
+        }
+
+        setSoundUnlocked(true);
+      } catch (error) {
+        console.log(
+          "Order sound unlock unavailable",
+          error,
+        );
+      }
+    }
+
+    document.addEventListener(
+      "pointerdown",
+      unlockOrderSound,
+      {
+        once: true,
+        capture: true,
+      },
+    );
+
+    document.addEventListener(
+      "keydown",
+      unlockOrderSound,
+      {
+        once: true,
+        capture: true,
+      },
+    );
+
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        unlockOrderSound,
+        true,
+      );
+
+      document.removeEventListener(
+        "keydown",
+        unlockOrderSound,
+        true,
+      );
+    };
+  }, []);
+
+  /*
+    Ring continuously while there is an
+    unanswered new order and sound is enabled.
+  */
   useEffect(() => {
     stopAlarm();
 
     if (
       newOrders.length > 0 &&
-      soundEnabled
+      soundEnabled &&
+      soundUnlocked
     ) {
       makeAlarmSound();
 
@@ -1503,6 +1637,7 @@ export default function RestaurantDashboard() {
   }, [
     newOrders.length,
     soundEnabled,
+    soundUnlocked,
   ]);
 
   const acceptedFoodSales =
@@ -1630,7 +1765,30 @@ export default function RestaurantDashboard() {
                 </button>
               </Form>
 
-              {!soundEnabled ? (
+              {soundEnabled ? (
+                <button
+                  type="button"
+                  style={
+                    styles.soundOnButton
+                  }
+                  onClick={
+                    disableSound
+                  }
+                  title="Click to turn order sound off"
+                >
+                  🔊 ORDER SOUND ON
+
+                  {!soundUnlocked && (
+                    <span
+                      style={
+                        styles.soundHint
+                      }
+                    >
+                      Activates on first tap
+                    </span>
+                  )}
+                </button>
+              ) : (
                 <button
                   type="button"
                   style={
@@ -1640,16 +1798,8 @@ export default function RestaurantDashboard() {
                     enableSound
                   }
                 >
-                  🔊 ENABLE ORDER SOUND
+                  🔇 ORDER SOUND OFF
                 </button>
-              ) : (
-                <div
-                  style={
-                    styles.soundOn
-                  }
-                >
-                  🔊 ORDER SOUND ON
-                </div>
               )}
             </section>
 
@@ -2483,6 +2633,23 @@ const styles = {
     padding: "14px 20px",
     color: "#137333",
     fontWeight: 800,
+  },
+
+  soundOnButton: {
+    background: "#e8f5e9",
+    color: "#137333",
+    border: "2px solid #137333",
+    borderRadius: 10,
+    padding: "10px 20px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  soundHint: {
+    display: "block",
+    fontSize: 11,
+    marginTop: 3,
+    fontWeight: 600,
   },
 
   newOrder: {
