@@ -125,17 +125,6 @@ function londonTime(dateString) {
   }).format(new Date(dateString));
 }
 
-/*
-  ============================================================
-  WEEKLY PAYMENT DATE HELPERS
-  ============================================================
-
-  Restaurant payment week:
-  Monday 00:00 through Sunday 23:59 London time.
-
-  The expected payout is the Wednesday after that Sunday.
-*/
-
 function londonDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/London",
@@ -194,11 +183,6 @@ function getCurrentPaymentWeek() {
   const daysSinceMonday =
     weekdayNumbers[londonNow.weekday] ?? 0;
 
-  /*
-    UTC is being used here only as a calendar calculator.
-    The actual current date above is first determined using
-    Europe/London.
-  */
   const todayCalendar = new Date(
     Date.UTC(
       londonNow.year,
@@ -224,10 +208,6 @@ function getCurrentPaymentWeek() {
     mondayCalendar.getUTCDate() + 6,
   );
 
-  /*
-    Monday + 9 days = Wednesday following
-    the end of the Monday-Sunday week.
-  */
   const payoutCalendar = new Date(
     mondayCalendar,
   );
@@ -378,6 +358,29 @@ async function getShopifyOrders(restaurantId) {
           restaurantId,
         );
 
+        /*
+          TEMPORARY DIAGNOSTIC FOR ORDER #1030.
+
+          This will show the exact line-item
+          names and amounts Shopify is returning.
+        */
+        if (order.name === "#1030") {
+          console.log(
+            "ORDER #1030 LINE ITEMS:",
+            order.lineItems.nodes.map((item) => ({
+              name: item.name,
+              quantity: item.quantity,
+              amount:
+                item.originalTotalSet
+                  ?.shopMoney?.amount,
+              restaurantId: getAttribute(
+                item.customAttributes,
+                "_Restaurant ID",
+              ),
+            })),
+          );
+        }
+
         const matchingItems =
           order.lineItems.nodes.filter(
             (item) =>
@@ -402,14 +405,6 @@ async function getShopifyOrders(restaurantId) {
             0,
           );
 
-        /*
-          Find the Meal Deal Hub customer
-          service fee line item on this order.
-
-          This fee belongs to Meal Deal Hub
-          and is NOT included in restaurant
-          earnings.
-        */
         const serviceFee =
           order.lineItems.nodes
             .filter(
@@ -486,10 +481,6 @@ async function getShopifyOrders(restaurantId) {
               ?.shopMoney?.amount || 0,
           ),
 
-          /*
-            Customer service fees are retained by
-            Meal Deal Hub and are not restaurant income.
-          */
           serviceFee,
 
           total: Number(
@@ -778,27 +769,15 @@ export default function RestaurantDashboard() {
         order.status === "new",
     );
 
-  /*
-    Keep ALL accepted orders here for the
-    Current Orders section.
-  */
   const acceptedOrders =
     restaurantOrders.filter(
       (order) =>
         order.status === "accepted",
     );
 
-  /*
-    Work out the current Monday-Sunday
-    payment period in London time.
-  */
   const paymentWeek =
     getCurrentPaymentWeek();
 
-  /*
-    Only these accepted orders count toward
-    the current week's payment figures.
-  */
   const weeklyAcceptedOrders =
     acceptedOrders.filter((order) => {
       const orderDate =
@@ -914,21 +893,6 @@ export default function RestaurantDashboard() {
     soundEnabled,
   ]);
 
-  /*
-    ==========================================================
-    CURRENT WEEK PAYMENT TOTALS
-    ==========================================================
-
-    Food:
-    Restaurant receives 90%.
-
-    Delivery:
-    Restaurant receives 100%.
-
-    Service fee:
-    Retained by Meal Deal Hub.
-  */
-
   const acceptedFoodSales =
     weeklyAcceptedOrders.reduce(
       (total, order) =>
@@ -975,19 +939,13 @@ export default function RestaurantDashboard() {
               MEAL DEAL HUB
             </div>
 
-            <h1
-              style={
-                styles.restaurantName
-              }
-            >
+            <h1 style={styles.restaurantName}>
               {restaurant.name}
             </h1>
 
             <div style={styles.location}>
               Restaurant ID:{" "}
-              {
-                restaurant.restaurantId
-              }
+              {restaurant.restaurantId}
             </div>
           </div>
 
@@ -1006,9 +964,7 @@ export default function RestaurantDashboard() {
 
         {activeTab === "orders" && (
           <>
-            <section
-              style={styles.controls}
-            >
+            <section style={styles.controls}>
               <Form method="post">
                 <input
                   type="hidden"
@@ -1040,124 +996,71 @@ export default function RestaurantDashboard() {
               {!soundEnabled ? (
                 <button
                   type="button"
-                  style={
-                    styles.orangeButton
-                  }
-                  onClick={
-                    enableSound
-                  }
+                  style={styles.orangeButton}
+                  onClick={enableSound}
                 >
                   🔊 ENABLE ORDER SOUND
                 </button>
               ) : (
-                <div
-                  style={
-                    styles.soundOn
-                  }
-                >
+                <div style={styles.soundOn}>
                   🔊 ORDER SOUND ON
                 </div>
               )}
             </section>
 
             {firstNewOrder ? (
-              <section
-                style={
-                  styles.newOrder
-                }
-              >
-                <div
-                  style={
-                    styles.orderTop
-                  }
-                >
+              <section style={styles.newOrder}>
+                <div style={styles.orderTop}>
                   <div>
-                    <div
-                      style={
-                        styles.newLabel
-                      }
-                    >
+                    <div style={styles.newLabel}>
                       🔔 NEW ORDER
                     </div>
 
-                    <h2
-                      style={
-                        styles.orderNumber
-                      }
-                    >
-                      {
-                        firstNewOrder.orderNumber
-                      }
+                    <h2 style={styles.orderNumber}>
+                      {firstNewOrder.orderNumber}
                     </h2>
 
-                    <div
-                      style={
-                        styles.greyText
-                      }
-                    >
+                    <div style={styles.greyText}>
                       Received{" "}
-                      {
-                        firstNewOrder.time
-                      }
+                      {firstNewOrder.time}
                     </div>
                   </div>
 
-                  <div
-                    style={styles.total}
-                  >
-                    {money(
-                      firstNewOrder.total,
-                    )}
+                  <div style={styles.total}>
+                    {money(firstNewOrder.total)}
                   </div>
                 </div>
 
-                <p
-                  style={
-                    styles.customer
-                  }
-                >
+                <p style={styles.customer}>
                   Shopify order:{" "}
                   <strong>
-                    {
-                      firstNewOrder.orderNumber
-                    }
+                    {firstNewOrder.orderNumber}
                   </strong>
                 </p>
 
                 <div
                   style={{
-                    marginBottom:
-                      "16px",
+                    marginBottom: "16px",
                     lineHeight: "1.5",
                   }}
                 >
                   <div>
-                    <strong>
-                      Customer:
-                    </strong>{" "}
+                    <strong>Customer:</strong>{" "}
                     {firstNewOrder.customer ||
                       "Customer"}
                   </div>
 
                   {firstNewOrder.customerPhone && (
                     <div>
-                      <strong>
-                        Phone:
-                      </strong>{" "}
-                      {
-                        firstNewOrder.customerPhone
-                      }
+                      <strong>Phone:</strong>{" "}
+                      {firstNewOrder.customerPhone}
                     </div>
                   )}
 
                   {firstNewOrder.customerEmail && (
                     <div>
-                      <strong>
-                        Email:
-                      </strong>{" "}
-                      {
-                        firstNewOrder.customerEmail
-                      }
+                      <strong>Email:</strong>{" "}
+                      {firstNewOrder.customerEmail}
                     </div>
                   )}
 
@@ -1166,33 +1069,22 @@ export default function RestaurantDashboard() {
                       <strong>
                         Delivery address:
                       </strong>{" "}
-                      {
-                        firstNewOrder.customerAddress
-                      }
+                      {firstNewOrder.customerAddress}
                     </div>
                   )}
                 </div>
 
-                <div
-                  style={styles.items}
-                >
+                <div style={styles.items}>
                   {firstNewOrder.items.map(
                     (item, index) => (
                       <div
                         key={index}
-                        style={
-                          styles.item
-                        }
+                        style={styles.item}
                       >
                         <span
-                          style={
-                            styles.quantity
-                          }
+                          style={styles.quantity}
                         >
-                          {
-                            item.quantity
-                          }{" "}
-                          ×
+                          {item.quantity} ×
                         </span>{" "}
                         {item.name}
                       </div>
@@ -1200,11 +1092,7 @@ export default function RestaurantDashboard() {
                   )}
                 </div>
 
-                <div
-                  style={
-                    styles.actions
-                  }
-                >
+                <div style={styles.actions}>
                   <orderFetcher.Form method="post">
                     <input
                       type="hidden"
@@ -1215,9 +1103,7 @@ export default function RestaurantDashboard() {
                     <input
                       type="hidden"
                       name="shopifyOrderId"
-                      value={
-                        firstNewOrder.id
-                      }
+                      value={firstNewOrder.id}
                     />
 
                     <input
@@ -1230,9 +1116,7 @@ export default function RestaurantDashboard() {
 
                     <button
                       type="submit"
-                      style={
-                        styles.acceptButton
-                      }
+                      style={styles.acceptButton}
                     >
                       ✓ ACCEPT ORDER
                     </button>
@@ -1248,9 +1132,7 @@ export default function RestaurantDashboard() {
                     <input
                       type="hidden"
                       name="shopifyOrderId"
-                      value={
-                        firstNewOrder.id
-                      }
+                      value={firstNewOrder.id}
                     />
 
                     <input
@@ -1263,9 +1145,7 @@ export default function RestaurantDashboard() {
 
                     <button
                       type="submit"
-                      style={
-                        styles.rejectButton
-                      }
+                      style={styles.rejectButton}
                     >
                       × REJECT ORDER
                     </button>
@@ -1273,59 +1153,33 @@ export default function RestaurantDashboard() {
                 </div>
               </section>
             ) : (
-              <section
-                style={styles.waiting}
-              >
-                <div
-                  style={styles.tick}
-                >
+              <section style={styles.waiting}>
+                <div style={styles.tick}>
                   ✓
                 </div>
 
-                <h2>
-                  No New Orders
-                </h2>
+                <h2>No New Orders</h2>
 
                 <p>
-                  New orders will
-                  appear here
+                  New orders will appear here
                   automatically.
                 </p>
               </section>
             )}
 
-            <section
-              style={styles.panel}
-            >
-              <div
-                style={
-                  styles.titleRow
-                }
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                  }}
-                >
+            <section style={styles.panel}>
+              <div style={styles.titleRow}>
+                <h2 style={{ margin: 0 }}>
                   Current Orders
                 </h2>
 
-                <span
-                  style={styles.count}
-                >
-                  {
-                    acceptedOrders.length
-                  }
+                <span style={styles.count}>
+                  {acceptedOrders.length}
                 </span>
               </div>
 
-              {acceptedOrders.length ===
-              0 ? (
-                <p
-                  style={
-                    styles.greyText
-                  }
-                >
+              {acceptedOrders.length === 0 ? (
+                <p style={styles.greyText}>
                   No current orders.
                 </p>
               ) : (
@@ -1333,30 +1187,21 @@ export default function RestaurantDashboard() {
                   (order) => (
                     <div
                       key={order.id}
-                      style={
-                        styles.currentOrder
-                      }
+                      style={styles.currentOrder}
                     >
                       <div>
                         <strong
                           style={{
-                            fontSize:
-                              20,
+                            fontSize: 20,
                           }}
                         >
-                          {
-                            order.orderNumber
-                          }
+                          {order.orderNumber}
                         </strong>
 
                         <div
-                          style={
-                            styles.greyText
-                          }
+                          style={styles.greyText}
                         >
-                          {money(
-                            order.total,
-                          )}
+                          {money(order.total)}
                         </div>
                       </div>
 
@@ -1375,33 +1220,20 @@ export default function RestaurantDashboard() {
           </>
         )}
 
-        {activeTab ===
-          "payments" && (
+        {activeTab === "payments" && (
           <>
-            <section
-              style={
-                styles.pageHeading
-              }
-            >
-              <h2
-                style={{ margin: 0 }}
-              >
+            <section style={styles.pageHeading}>
+              <h2 style={{ margin: 0 }}>
                 Payments
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Your Meal Deal Hub
-                earnings and payouts.
+              <p style={styles.greyText}>
+                Your Meal Deal Hub earnings
+                and payouts.
               </p>
             </section>
 
-            <div
-              style={styles.grid}
-            >
+            <div style={styles.grid}>
               <PaymentCard
                 title="MEAL DEAL SALES"
                 value={money(
@@ -1431,37 +1263,21 @@ export default function RestaurantDashboard() {
               />
             </div>
 
-            <section
-              style={styles.payout}
-            >
-              <div
-                style={
-                  styles.smallWhite
-                }
-              >
+            <section style={styles.payout}>
+              <div style={styles.smallWhite}>
                 NEXT PAYOUT
               </div>
 
-              <div
-                style={
-                  styles.payoutAmount
-                }
-              >
-                {money(
-                  restaurantEarnings,
-                )}
+              <div style={styles.payoutAmount}>
+                {money(restaurantEarnings)}
               </div>
 
               <p>
                 Payout period:{" "}
                 <strong>
-                  {
-                    paymentWeek.startLabel
-                  }
+                  {paymentWeek.startLabel}
                   {" – "}
-                  {
-                    paymentWeek.endLabel
-                  }
+                  {paymentWeek.endLabel}
                 </strong>
               </p>
 
@@ -1469,98 +1285,62 @@ export default function RestaurantDashboard() {
                 Expected payout:{" "}
                 <strong>
                   Wednesday{" "}
-                  {
-                    paymentWeek.payoutLabel
-                  }
+                  {paymentWeek.payoutLabel}
                 </strong>
               </p>
 
               <p>
-                Accepted orders this
-                week:{" "}
+                Accepted orders this week:{" "}
                 <strong>
-                  {
-                    weeklyAcceptedOrders.length
-                  }
+                  {weeklyAcceptedOrders.length}
                 </strong>
               </p>
 
               <p>
-                Meal Deal Hub
-                commission:{" "}
+                Meal Deal Hub commission:{" "}
                 <strong>
-                  {money(
-                    commission,
-                  )}
+                  {money(commission)}
                 </strong>
               </p>
 
               <p>
-                Service fees retained
-                by Meal Deal Hub:{" "}
+                Service fees retained by Meal
+                Deal Hub:{" "}
                 <strong>
-                  {money(
-                    serviceFees,
-                  )}
+                  {money(serviceFees)}
                 </strong>
               </p>
             </section>
 
-            <section
-              style={styles.panel}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Payout History
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                No completed payouts
-                yet.
+              <p style={styles.greyText}>
+                No completed payouts yet.
               </p>
             </section>
           </>
         )}
 
-        {activeTab ===
-          "account" && (
+        {activeTab === "account" && (
           <>
-            <section
-              style={
-                styles.pageHeading
-              }
-            >
-              <h2
-                style={{ margin: 0 }}
-              >
+            <section style={styles.pageHeading}>
+              <h2 style={{ margin: 0 }}>
                 Restaurant Account
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Your Meal Deal Hub
-                restaurant account.
+              <p style={styles.greyText}>
+                Your Meal Deal Hub restaurant
+                account.
               </p>
             </section>
 
-            <section
-              style={styles.panel}
-            >
+            <section style={styles.panel}>
               <AccountRow
                 label="Restaurant"
-                value={
-                  restaurant.name
-                }
+                value={restaurant.name}
               />
 
               <AccountRow
@@ -1585,23 +1365,15 @@ export default function RestaurantDashboard() {
               />
             </section>
 
-            <section
-              style={styles.panel}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Order Status
               </h2>
 
               <p>
-                Temporarily stop new
-                Meal Deal Hub orders
-                whenever your
-                restaurant is too
-                busy.
+                Temporarily stop new Meal Deal
+                Hub orders whenever your
+                restaurant is too busy.
               </p>
 
               <Form method="post">
@@ -1633,31 +1405,19 @@ export default function RestaurantDashboard() {
               </Form>
             </section>
 
-            <section
-              style={styles.panel}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Sign Out
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Sign out of this
-                restaurant terminal.
+              <p style={styles.greyText}>
+                Sign out of this restaurant
+                terminal.
               </p>
 
               <a
                 href="/restaurant/logout"
-                style={
-                  styles.logoutButton
-                }
+                style={styles.logoutButton}
               >
                 LOG OUT
               </a>
@@ -1665,9 +1425,7 @@ export default function RestaurantDashboard() {
           </>
         )}
 
-        <nav
-          style={styles.bottomNav}
-        >
+        <nav style={styles.bottomNav}>
           <button
             type="button"
             onClick={() =>
@@ -1685,13 +1443,10 @@ export default function RestaurantDashboard() {
           <button
             type="button"
             onClick={() =>
-              setActiveTab(
-                "payments",
-              )
+              setActiveTab("payments")
             }
             style={
-              activeTab ===
-              "payments"
+              activeTab === "payments"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -1705,8 +1460,7 @@ export default function RestaurantDashboard() {
               setActiveTab("account")
             }
             style={
-              activeTab ===
-              "account"
+              activeTab === "account"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -1725,15 +1479,11 @@ function PaymentCard({
 }) {
   return (
     <div style={styles.card}>
-      <div
-        style={styles.cardTitle}
-      >
+      <div style={styles.cardTitle}>
         {title}
       </div>
 
-      <div
-        style={styles.cardValue}
-      >
+      <div style={styles.cardValue}>
         {value}
       </div>
     </div>
@@ -1745,12 +1495,8 @@ function AccountRow({
   value,
 }) {
   return (
-    <div
-      style={styles.accountRow}
-    >
-      <div
-        style={styles.greyText}
-      >
+    <div style={styles.accountRow}>
+      <div style={styles.greyText}>
         {label}
       </div>
 
@@ -1780,8 +1526,7 @@ const styles = {
     borderRadius: 18,
     padding: 24,
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 20,
     flexWrap: "wrap",
@@ -1860,8 +1605,7 @@ const styles = {
 
   newOrder: {
     background: "#fff",
-    border:
-      "4px solid #f05a28",
+    border: "4px solid #f05a28",
     borderRadius: 18,
     padding: 25,
     marginBottom: 18,
@@ -1869,8 +1613,7 @@ const styles = {
 
   orderTop: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
     flexWrap: "wrap",
   },
@@ -1936,8 +1679,7 @@ const styles = {
     minHeight: 64,
     background: "#fff",
     color: "#b42318",
-    border:
-      "2px solid #b42318",
+    border: "2px solid #b42318",
     borderRadius: 12,
     fontSize: 18,
     fontWeight: 900,
@@ -2000,12 +1742,10 @@ const styles = {
   },
 
   currentOrder: {
-    borderTop:
-      "1px solid #eee",
+    borderTop: "1px solid #eee",
     padding: "16px 0",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
   },
 
@@ -2066,11 +1806,9 @@ const styles = {
 
   accountRow: {
     padding: "15px 0",
-    borderBottom:
-      "1px solid #eee",
+    borderBottom: "1px solid #eee",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
   },
 
