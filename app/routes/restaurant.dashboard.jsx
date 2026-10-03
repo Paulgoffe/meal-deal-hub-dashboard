@@ -337,20 +337,12 @@ function getShippingLocation(order) {
 SHOPIFY ORDER FETCHING
 =========================================================
 
-Fetch up to 500 recent Shopify orders.
-
-IMPORTANT:
-The broken fulfillments GraphQL query has been removed.
-
 Restaurant matching priority:
 
 1. Food line _Restaurant ID
 2. Order-level _Restaurant ID
-3. Shipping/name fallback
-
-We will deal with Shopify assigned fulfilment
-locations separately once the normal dashboard
-is restored.
+3. Shopify assigned fulfillment location
+4. Shipping/name fallback
 */
 
 async function fetchShopifyOrderPage(
@@ -404,6 +396,14 @@ async function fetchShopifyOrderPage(
               title
               code
               deliveryCategory
+            }
+
+            fulfillmentOrders(first: 20) {
+              nodes {
+                assignedLocation {
+                  name
+                }
+              }
             }
 
             currentTotalPriceSet {
@@ -649,6 +649,34 @@ async function getShopifyOrders(
 
         /*
         =========================================
+        SHOPIFY ASSIGNED FULFILLMENT LOCATION
+        =========================================
+        */
+
+        const assignedLocations =
+          (
+            order.fulfillmentOrders?.nodes ||
+            []
+          )
+            .map(
+              (fulfillmentOrder) =>
+                fulfillmentOrder
+                  ?.assignedLocation
+                  ?.name || "",
+            )
+            .filter(Boolean);
+
+        const assignedLocationMatchesRestaurant =
+          assignedLocations.some(
+            (locationName) =>
+              textMatches(
+                locationName,
+                restaurantName,
+              ),
+          );
+
+        /*
+        =========================================
         RESTAURANT MATCH
         =========================================
         */
@@ -660,8 +688,8 @@ async function getShopifyOrders(
           foodRestaurantIds.length > 0;
 
         /*
-          Use order-level ID if line-item IDs
-          are missing.
+        Use order-level ID if line-item IDs
+        are missing.
         */
         if (
           !hasExplicitFoodRestaurant &&
@@ -672,9 +700,23 @@ async function getShopifyOrders(
         }
 
         /*
-          Only use fallback matching when
-          neither the food line nor order has
-          a conflicting Restaurant ID.
+        Use Shopify assigned fulfillment
+        location if Restaurant ID is missing
+        and there is no conflicting ID.
+        */
+        if (
+          noFoodRestaurantId &&
+          !orderHasDifferentRestaurant &&
+          assignedLocationMatchesRestaurant
+        ) {
+          belongsToRestaurant =
+            true;
+        }
+
+        /*
+        Only use fallback matching when
+        neither the food line nor order has
+        a conflicting Restaurant ID.
         */
         const canUseFallback =
           noFoodRestaurantId &&
@@ -741,6 +783,11 @@ async function getShopifyOrders(
             orderType,
 
             shippingLocation,
+
+            assignedLocations,
+
+            assignedLocationMatch:
+              assignedLocationMatchesRestaurant,
 
             foodRestaurantIds,
 
@@ -834,7 +881,10 @@ async function getShopifyOrders(
 
           pickupLocation:
             orderType === "pickup"
-              ? shippingLocation
+              ? (
+                  assignedLocations[0] ||
+                  shippingLocation
+                )
               : "",
 
           time:
