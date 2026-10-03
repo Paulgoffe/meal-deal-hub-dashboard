@@ -31,16 +31,17 @@ model Session {
 }
 
 model Restaurant {
-  id              Int              @id @default(autoincrement())
-  restaurantId    String           @unique
+  id              Int      @id @default(autoincrement())
+  restaurantId    String   @unique
   name            String
-  active          Boolean          @default(true)
-  acceptingOrders Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  active          Boolean  @default(true)
+  acceptingOrders Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   users          RestaurantUser[]
   orderDecisions OrderDecision[]
+  payouts        RestaurantPayout[]
 }
 
 model RestaurantUser {
@@ -73,5 +74,33 @@ model OrderDecision {
 
   @@unique([shopifyOrderId, restaurantId])
   @@index([restaurantId])
+  @@index([status])
+}
+
+model RestaurantPayout {
+  id           Int      @id @default(autoincrement())
+  restaurantId Int
+  weekStart    DateTime
+  weekEnd      DateTime
+  payoutDate   DateTime
+
+  foodSales          Decimal @db.Decimal(10, 2)
+  deliveryIncome     Decimal @db.Decimal(10, 2)
+  commission         Decimal @db.Decimal(10, 2)
+  serviceFees        Decimal @db.Decimal(10, 2)
+  restaurantEarnings Decimal @db.Decimal(10, 2)
+
+  acceptedOrderCount Int    @default(0)
+  status             String @default("expected")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, weekStart])
+  @@index([restaurantId])
+  @@index([weekStart])
+  @@index([payoutDate])
   @@index([status])
 }
