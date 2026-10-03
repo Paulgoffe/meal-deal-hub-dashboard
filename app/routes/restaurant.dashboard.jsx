@@ -334,15 +334,17 @@ function getShippingLocation(order) {
 
 /*
 =========================================================
-SHOPIFY ORDER FETCHING
+MAIN SHOPIFY ORDER QUERY
 =========================================================
 
-Restaurant matching priority:
+IMPORTANT:
 
-1. Food line _Restaurant ID
-2. Order-level _Restaurant ID
-3. Shopify assigned fulfillment location
-4. Shipping/name fallback
+DO NOT put fulfillmentOrders inside this query.
+
+This is the stable order query that already worked
+and showed previous orders.
+
+Fulfillment locations are looked up separately below.
 */
 
 async function fetchShopifyOrderPage(
@@ -398,14 +400,6 @@ async function fetchShopifyOrderPage(
               deliveryCategory
             }
 
-            fulfillmentOrders(first: 20) {
-              nodes {
-                assignedLocation {
-                  name
-                }
-              }
-            }
-
             currentTotalPriceSet {
               shopMoney {
                 amount
@@ -453,7 +447,7 @@ async function fetchShopifyOrderPage(
 
   if (result.errors?.length) {
     console.error(
-      "SHOPIFY GRAPHQL ERRORS:",
+      "SHOPIFY MAIN ORDER GRAPHQL ERRORS:",
       JSON.stringify(result.errors),
     );
   }
@@ -468,6 +462,103 @@ async function fetchShopifyOrderPage(
         endCursor: null,
       },
   };
+}
+
+/*
+=========================================================
+SAFE ASSIGNED LOCATION LOOKUP
+=========================================================
+
+This query is completely separate from the main
+order query.
+
+If Shopify refuses access because the app does not
+have the fulfillment-order permission, this function
+returns an empty array.
+
+THE MAIN DASHBOARD ORDERS WILL STILL LOAD.
+*/
+
+async function getAssignedLocations(
+  admin,
+  orderId,
+  orderName = "",
+) {
+  try {
+    const response = await admin.graphql(
+      `
+        query RestaurantOrderAssignedLocation($id: ID!) {
+          order(id: $id) {
+            fulfillmentOrders(first: 20) {
+              nodes {
+                assignedLocation {
+                  name
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          id: orderId,
+        },
+      },
+    );
+
+    const result = await response.json();
+
+    if (result.errors?.length) {
+      console.error(
+        "ASSIGNED LOCATION GRAPHQL ERROR:",
+        JSON.stringify({
+          order: orderName,
+          orderId,
+          errors: result.errors,
+        }),
+      );
+
+      return [];
+    }
+
+    const locations =
+      (
+        result.data?.order
+          ?.fulfillmentOrders?.nodes ||
+        []
+      )
+        .map(
+          (fulfillmentOrder) =>
+            fulfillmentOrder
+              ?.assignedLocation
+              ?.name || "",
+        )
+        .filter(Boolean);
+
+    console.log(
+      "ASSIGNED LOCATION RESULT:",
+      JSON.stringify({
+        order: orderName,
+        orderId,
+        locations,
+      }),
+    );
+
+    return locations;
+  } catch (error) {
+    console.error(
+      "ASSIGNED LOCATION LOOKUP FAILED:",
+      {
+        order: orderName,
+        orderId,
+        message:
+          error?.message ||
+          String(error),
+      },
+    );
+
+    return [];
+  }
 }
 
 async function getRawShopifyOrders(admin) {
@@ -560,113 +651,185 @@ async function getShopifyOrders(
         admin,
       );
 
-    return nodes
-      .map((order) => {
-        const foodItems =
-          order.lineItems?.nodes?.filter(
-            (item) =>
-              !isServiceFeeItem(item),
-          ) || [];
+    const results = [];
 
-        if (foodItems.length === 0) {
-          console.log(
-            "ORDER SKIPPED - NO FOOD ITEMS:",
-            order.name,
-          );
+    /*
+    =====================================================
+    ONLY CHECK ASSIGNED LOCATION FOR RECENT UNIDENTIFIED
+    ORDERS
+    =====================================================
 
-          return null;
-        }
+    This avoids doing fulfillment queries for hundreds
+    of old orders.
 
-        /*
-        =========================================
-        FOOD LINE RESTAURANT IDS
-        =========================================
-        */
+    Existing orders with Restaurant IDs continue using
+    the original matching system.
+    */
 
-        const foodRestaurantIds =
-          foodItems
-            .map((item) =>
+    const ASSIGNED_LOCATION_LOOKUP_AGE_MS =
+      48 * 60 * 60 * 1000;
+
+    const now = Date.now();
+
+    for (const order of nodes) {
+      const foodItems =
+        order.lineItems?.nodes?.filter(
+          (item) =>
+            !isServiceFeeItem(item),
+        ) || [];
+
+      if (foodItems.length === 0) {
+        console.log(
+          "ORDER SKIPPED - NO FOOD ITEMS:",
+          order.name,
+        );
+
+        continue;
+      }
+
+      /*
+      =========================================
+      FOOD LINE RESTAURANT IDS
+      =========================================
+      */
+
+      const foodRestaurantIds =
+        foodItems
+          .map((item) =>
+            getAttribute(
+              item.customAttributes,
+              "_Restaurant ID",
+            ),
+          )
+          .filter(Boolean);
+
+      const matchingItems =
+        foodItems.filter(
+          (item) =>
+            normaliseText(
               getAttribute(
                 item.customAttributes,
                 "_Restaurant ID",
               ),
-            )
-            .filter(Boolean);
-
-        const matchingItems =
-          foodItems.filter(
-            (item) =>
-              normaliseText(
-                getAttribute(
-                  item.customAttributes,
-                  "_Restaurant ID",
-                ),
-              ) ===
-              normaliseText(
-                restaurantId,
-              ),
-          );
-
-        const noFoodRestaurantId =
-          foodRestaurantIds.length === 0;
-
-        /*
-        =========================================
-        ORDER RESTAURANT ID
-        =========================================
-        */
-
-        const orderRestaurantId =
-          getAttribute(
-            order.customAttributes,
-            "_Restaurant ID",
-          );
-
-        const orderRestaurantMatches =
-          Boolean(orderRestaurantId) &&
-          normaliseText(
-            orderRestaurantId,
-          ) ===
+            ) ===
             normaliseText(
               restaurantId,
-            );
+            ),
+        );
 
-        const orderHasDifferentRestaurant =
-          Boolean(orderRestaurantId) &&
-          !orderRestaurantMatches;
+      const noFoodRestaurantId =
+        foodRestaurantIds.length === 0;
 
-        /*
-        =========================================
-        ORDER TYPE / SHIPPING
-        =========================================
-        */
+      const hasExplicitFoodRestaurant =
+        foodRestaurantIds.length > 0;
 
-        const orderType =
-          getOrderType(order);
+      /*
+      =========================================
+      ORDER RESTAURANT ID
+      =========================================
+      */
 
-        const shippingLocation =
-          getShippingLocation(order);
+      const orderRestaurantId =
+        getAttribute(
+          order.customAttributes,
+          "_Restaurant ID",
+        );
 
-        /*
-        =========================================
-        SHOPIFY ASSIGNED FULFILLMENT LOCATION
-        =========================================
-        */
+      const orderRestaurantMatches =
+        Boolean(orderRestaurantId) &&
+        normaliseText(
+          orderRestaurantId,
+        ) ===
+          normaliseText(
+            restaurantId,
+          );
 
-        const assignedLocations =
-          (
-            order.fulfillmentOrders?.nodes ||
-            []
-          )
-            .map(
-              (fulfillmentOrder) =>
-                fulfillmentOrder
-                  ?.assignedLocation
-                  ?.name || "",
-            )
-            .filter(Boolean);
+      const orderHasDifferentRestaurant =
+        Boolean(orderRestaurantId) &&
+        !orderRestaurantMatches;
 
-        const assignedLocationMatchesRestaurant =
+      /*
+      =========================================
+      ORDER TYPE / SHIPPING
+      =========================================
+      */
+
+      const orderType =
+        getOrderType(order);
+
+      const shippingLocation =
+        getShippingLocation(order);
+
+      /*
+      =========================================
+      PRIMARY RESTAURANT MATCH
+      =========================================
+      */
+
+      let belongsToRestaurant =
+        matchingItems.length > 0;
+
+      if (
+        !hasExplicitFoodRestaurant &&
+        orderRestaurantMatches
+      ) {
+        belongsToRestaurant =
+          true;
+      }
+
+      /*
+      =========================================
+      SAFE ASSIGNED LOCATION LOOKUP
+      =========================================
+
+      Only attempt this when:
+
+      - Restaurant ID is missing
+      - There is no conflicting Restaurant ID
+      - Existing matching has not already succeeded
+      - Order is recent
+
+      If Shopify refuses the lookup, it returns [] and
+      the rest of the dashboard keeps working.
+      */
+
+      let assignedLocations = [];
+
+      let assignedLocationMatchesRestaurant =
+        false;
+
+      const orderCreatedTime =
+        order.createdAt
+          ? new Date(
+              order.createdAt,
+            ).getTime()
+          : 0;
+
+      const orderIsRecent =
+        Number.isFinite(
+          orderCreatedTime,
+        ) &&
+        now - orderCreatedTime <=
+          ASSIGNED_LOCATION_LOOKUP_AGE_MS;
+
+      const shouldCheckAssignedLocation =
+        !belongsToRestaurant &&
+        noFoodRestaurantId &&
+        !orderRestaurantId &&
+        !orderHasDifferentRestaurant &&
+        orderIsRecent;
+
+      if (
+        shouldCheckAssignedLocation
+      ) {
+        assignedLocations =
+          await getAssignedLocations(
+            admin,
+            order.id,
+            order.name,
+          );
+
+        assignedLocationMatchesRestaurant =
           assignedLocations.some(
             (locationName) =>
               textMatches(
@@ -675,163 +838,147 @@ async function getShopifyOrders(
               ),
           );
 
-        /*
-        =========================================
-        RESTAURANT MATCH
-        =========================================
-        */
-
-        let belongsToRestaurant =
-          matchingItems.length > 0;
-
-        const hasExplicitFoodRestaurant =
-          foodRestaurantIds.length > 0;
-
-        /*
-        Use order-level ID if line-item IDs
-        are missing.
-        */
         if (
-          !hasExplicitFoodRestaurant &&
-          orderRestaurantMatches
-        ) {
-          belongsToRestaurant =
-            true;
-        }
-
-        /*
-        Use Shopify assigned fulfillment
-        location if Restaurant ID is missing
-        and there is no conflicting ID.
-        */
-        if (
-          noFoodRestaurantId &&
-          !orderHasDifferentRestaurant &&
           assignedLocationMatchesRestaurant
         ) {
           belongsToRestaurant =
             true;
         }
+      }
 
-        /*
-        Only use fallback matching when
-        neither the food line nor order has
-        a conflicting Restaurant ID.
-        */
-        const canUseFallback =
-          noFoodRestaurantId &&
-          !orderHasDifferentRestaurant &&
-          !orderRestaurantId;
+      /*
+      =========================================
+      ORIGINAL FALLBACK MATCHING
+      =========================================
+      */
 
-        /*
-        =========================================
-        SHIPPING FALLBACK
-        =========================================
-        */
+      const canUseFallback =
+        noFoodRestaurantId &&
+        !orderHasDifferentRestaurant &&
+        !orderRestaurantId;
 
-        const shippingMatchesRestaurant =
-          canUseFallback &&
-          textMatches(
-            shippingLocation,
-            restaurantName,
-          );
-
-        if (shippingMatchesRestaurant) {
-          belongsToRestaurant =
-            true;
-        }
-
-        /*
-        =========================================
-        FOOD NAME FALLBACK
-        =========================================
-        */
-
-        const foodNameMatchesRestaurant =
-          canUseFallback &&
-          foodItems.some((item) =>
-            textMatches(
-              item.name,
-              restaurantName,
-            ),
-          );
-
-        if (foodNameMatchesRestaurant) {
-          belongsToRestaurant =
-            true;
-        }
-
-        /*
-        =========================================
-        DEBUG
-        =========================================
-        */
-
-        console.log(
-          "ORDER MATCH CHECK:",
-          JSON.stringify({
-            order:
-              order.name,
-
-            createdAt:
-              order.createdAt,
-
-            restaurantId,
-
-            restaurantName,
-
-            orderType,
-
-            shippingLocation,
-
-            assignedLocations,
-
-            assignedLocationMatch:
-              assignedLocationMatchesRestaurant,
-
-            foodRestaurantIds,
-
-            orderRestaurantId,
-
-            normalIdMatch:
-              matchingItems.length > 0,
-
-            orderIdMatch:
-              orderRestaurantMatches,
-
-            shippingMatch:
-              shippingMatchesRestaurant,
-
-            foodNameMatch:
-              foodNameMatchesRestaurant,
-
-            belongsToRestaurant,
-          }),
+      const shippingMatchesRestaurant =
+        canUseFallback &&
+        textMatches(
+          shippingLocation,
+          restaurantName,
         );
 
-        if (!belongsToRestaurant) {
-          return null;
-        }
+      if (
+        shippingMatchesRestaurant
+      ) {
+        belongsToRestaurant =
+          true;
+      }
 
-        /*
-        =========================================
-        RESTAURANT FOOD ITEMS
-        =========================================
-        */
+      const foodNameMatchesRestaurant =
+        canUseFallback &&
+        foodItems.some((item) =>
+          textMatches(
+            item.name,
+            restaurantName,
+          ),
+        );
 
-        const restaurantFoodItems =
-          matchingItems.length > 0
-            ? matchingItems
-            : foodItems;
+      if (
+        foodNameMatchesRestaurant
+      ) {
+        belongsToRestaurant =
+          true;
+      }
 
-        /*
-        =========================================
-        TOTALS
-        =========================================
-        */
+      /*
+      =========================================
+      DEBUG
+      =========================================
+      */
 
-        const foodTotal =
-          restaurantFoodItems.reduce(
+      console.log(
+        "ORDER MATCH CHECK:",
+        JSON.stringify({
+          order:
+            order.name,
+
+          createdAt:
+            order.createdAt,
+
+          restaurantId,
+
+          restaurantName,
+
+          orderType,
+
+          shippingLocation,
+
+          assignedLocations,
+
+          assignedLocationMatch:
+            assignedLocationMatchesRestaurant,
+
+          assignedLocationChecked:
+            shouldCheckAssignedLocation,
+
+          foodRestaurantIds,
+
+          orderRestaurantId,
+
+          normalIdMatch:
+            matchingItems.length > 0,
+
+          orderIdMatch:
+            orderRestaurantMatches,
+
+          shippingMatch:
+            shippingMatchesRestaurant,
+
+          foodNameMatch:
+            foodNameMatchesRestaurant,
+
+          belongsToRestaurant,
+        }),
+      );
+
+      if (!belongsToRestaurant) {
+        continue;
+      }
+
+      /*
+      =========================================
+      RESTAURANT FOOD ITEMS
+      =========================================
+      */
+
+      const restaurantFoodItems =
+        matchingItems.length > 0
+          ? matchingItems
+          : foodItems;
+
+      /*
+      =========================================
+      TOTALS
+      =========================================
+      */
+
+      const foodTotal =
+        restaurantFoodItems.reduce(
+          (total, item) =>
+            total +
+            Number(
+              item.originalTotalSet
+                ?.shopMoney?.amount || 0,
+            ),
+          0,
+        );
+
+      const serviceFee =
+        (
+          order.lineItems?.nodes ||
+          []
+        )
+          .filter((item) =>
+            isServiceFeeItem(item),
+          )
+          .reduce(
             (total, item) =>
               total +
               Number(
@@ -841,136 +988,119 @@ async function getShopifyOrders(
             0,
           );
 
-        const serviceFee =
-          (
-            order.lineItems?.nodes ||
-            []
-          )
-            .filter((item) =>
-              isServiceFeeItem(item),
-            )
-            .reduce(
-              (total, item) =>
-                total +
-                Number(
-                  item.originalTotalSet
-                    ?.shopMoney?.amount || 0,
-                ),
-              0,
-            );
+      /*
+      =========================================
+      DASHBOARD ORDER
+      =========================================
+      */
 
-        /*
-        =========================================
-        DASHBOARD ORDER
-        =========================================
-        */
+      results.push({
+        id:
+          order.id,
 
-        return {
-          id:
-            order.id,
+        orderNumber:
+          order.name,
 
-          orderNumber:
-            order.name,
+        createdAt:
+          order.createdAt,
 
-          createdAt:
+        restaurantId,
+
+        orderType,
+
+        pickupLocation:
+          orderType === "pickup"
+            ? (
+                assignedLocations[0] ||
+                shippingLocation
+              )
+            : "",
+
+        time:
+          londonTime(
             order.createdAt,
+          ),
 
-          restaurantId,
+        dateTime:
+          londonDateTime(
+            order.createdAt,
+          ),
 
-          orderType,
+        customer:
+          [
+            order.customer?.firstName,
+            order.customer?.lastName,
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          [
+            order.shippingAddress?.firstName,
+            order.shippingAddress?.lastName,
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          "Customer",
 
-          pickupLocation:
-            orderType === "pickup"
-              ? (
-                  assignedLocations[0] ||
-                  shippingLocation
-                )
-              : "",
+        customerEmail:
+          order.customer?.email ||
+          "",
 
-          time:
-            londonTime(
-              order.createdAt,
-            ),
+        customerPhone:
+          order.customer?.phone ||
+          order.shippingAddress?.phone ||
+          "",
 
-          dateTime:
-            londonDateTime(
-              order.createdAt,
-            ),
+        customerAddress:
+          [
+            order.shippingAddress?.address1,
+            order.shippingAddress?.address2,
+            order.shippingAddress?.city,
+            order.shippingAddress?.province,
+            order.shippingAddress?.zip,
+          ]
+            .filter(Boolean)
+            .join(", "),
 
-          customer:
-            [
-              order.customer?.firstName,
-              order.customer?.lastName,
-            ]
-              .filter(Boolean)
-              .join(" ") ||
-            [
-              order.shippingAddress?.firstName,
-              order.shippingAddress?.lastName,
-            ]
-              .filter(Boolean)
-              .join(" ") ||
-            "Customer",
+        items:
+          restaurantFoodItems.map(
+            (item) => ({
+              name:
+                item.name,
 
-          customerEmail:
-            order.customer?.email ||
-            "",
+              quantity:
+                item.quantity,
+            }),
+          ),
 
-          customerPhone:
-            order.customer?.phone ||
-            order.shippingAddress?.phone ||
-            "",
+        foodTotal,
 
-          customerAddress:
-            [
-              order.shippingAddress?.address1,
-              order.shippingAddress?.address2,
-              order.shippingAddress?.city,
-              order.shippingAddress?.province,
-              order.shippingAddress?.zip,
-            ]
-              .filter(Boolean)
-              .join(", "),
+        delivery:
+          Number(
+            order
+              .currentShippingPriceSet
+              ?.shopMoney?.amount ||
+              0,
+          ),
 
-          items:
-            restaurantFoodItems.map(
-              (item) => ({
-                name:
-                  item.name,
+        serviceFee,
 
-                quantity:
-                  item.quantity,
-              }),
-            ),
+        total:
+          Number(
+            order
+              .currentTotalPriceSet
+              ?.shopMoney?.amount ||
+              0,
+          ),
 
-          foodTotal,
+        financialStatus:
+          order.displayFinancialStatus,
 
-          delivery:
-            Number(
-              order
-                .currentShippingPriceSet
-                ?.shopMoney?.amount ||
-                0,
-            ),
+        status:
+          "new",
+      });
+    }
 
-          serviceFee,
-
-          total:
-            Number(
-              order
-                .currentTotalPriceSet
-                ?.shopMoney?.amount ||
-                0,
-            ),
-
-          financialStatus:
-            order.displayFinancialStatus,
-
-          status:
-            "new",
-        };
-      })
-      .filter(Boolean);
+    return results;
 
   } catch (error) {
     console.error(
@@ -1571,9 +1701,6 @@ export default function RestaurantDashboard() {
   const orderFetcher =
     useFetcher();
 
-  /*
-    Check Shopify every 5 seconds.
-  */
   useEffect(() => {
     const interval =
       setInterval(() => {
