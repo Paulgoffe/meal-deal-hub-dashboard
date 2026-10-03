@@ -218,9 +218,7 @@ function londonDateKey(dateString) {
     return "";
   }
 
-  const parts = londonDateParts(
-    new Date(dateString),
-  );
+  const parts = londonDateParts(new Date(dateString));
 
   return dateKeyFromParts(
     parts.year,
@@ -337,14 +335,11 @@ function getShippingLocation(order) {
 MAIN SHOPIFY ORDER QUERY
 =========================================================
 
-IMPORTANT:
+Keep fulfillmentOrders OUT of this query.
 
-DO NOT put fulfillmentOrders inside this query.
-
-This is the stable order query that already worked
-and showed previous orders.
-
-Fulfillment locations are looked up separately below.
+This is the stable query that loads the normal Shopify
+orders and prevents the entire dashboard disappearing
+if fulfillment permissions have a problem.
 */
 
 async function fetchShopifyOrderPage(
@@ -469,14 +464,10 @@ async function fetchShopifyOrderPage(
 SAFE ASSIGNED LOCATION LOOKUP
 =========================================================
 
-This query is completely separate from the main
-order query.
+This is deliberately separate from the main order query.
 
-If Shopify refuses access because the app does not
-have the fulfillment-order permission, this function
-returns an empty array.
-
-THE MAIN DASHBOARD ORDERS WILL STILL LOAD.
+If Shopify ever refuses fulfillment access, normal
+dashboard orders continue loading.
 */
 
 async function getAssignedLocations(
@@ -582,9 +573,7 @@ async function getRawShopifyOrders(admin) {
         cursor,
       );
 
-    allOrders.push(
-      ...page.nodes,
-    );
+    allOrders.push(...page.nodes);
 
     console.log(
       "SHOPIFY ORDER PAGE:",
@@ -603,10 +592,9 @@ async function getRawShopifyOrders(admin) {
       }),
     );
 
-    hasNextPage =
-      Boolean(
-        page.pageInfo.hasNextPage,
-      );
+    hasNextPage = Boolean(
+      page.pageInfo.hasNextPage,
+    );
 
     cursor =
       page.pageInfo.endCursor ||
@@ -653,19 +641,6 @@ async function getShopifyOrders(
 
     const results = [];
 
-    /*
-    =====================================================
-    ONLY CHECK ASSIGNED LOCATION FOR RECENT UNIDENTIFIED
-    ORDERS
-    =====================================================
-
-    This avoids doing fulfillment queries for hundreds
-    of old orders.
-
-    Existing orders with Restaurant IDs continue using
-    the original matching system.
-    */
-
     const ASSIGNED_LOCATION_LOOKUP_AGE_MS =
       48 * 60 * 60 * 1000;
 
@@ -686,12 +661,6 @@ async function getShopifyOrders(
 
         continue;
       }
-
-      /*
-      =========================================
-      FOOD LINE RESTAURANT IDS
-      =========================================
-      */
 
       const foodRestaurantIds =
         foodItems
@@ -723,12 +692,6 @@ async function getShopifyOrders(
       const hasExplicitFoodRestaurant =
         foodRestaurantIds.length > 0;
 
-      /*
-      =========================================
-      ORDER RESTAURANT ID
-      =========================================
-      */
-
       const orderRestaurantId =
         getAttribute(
           order.customAttributes,
@@ -748,23 +711,11 @@ async function getShopifyOrders(
         Boolean(orderRestaurantId) &&
         !orderRestaurantMatches;
 
-      /*
-      =========================================
-      ORDER TYPE / SHIPPING
-      =========================================
-      */
-
       const orderType =
         getOrderType(order);
 
       const shippingLocation =
         getShippingLocation(order);
-
-      /*
-      =========================================
-      PRIMARY RESTAURANT MATCH
-      =========================================
-      */
 
       let belongsToRestaurant =
         matchingItems.length > 0;
@@ -773,25 +724,8 @@ async function getShopifyOrders(
         !hasExplicitFoodRestaurant &&
         orderRestaurantMatches
       ) {
-        belongsToRestaurant =
-          true;
+        belongsToRestaurant = true;
       }
-
-      /*
-      =========================================
-      SAFE ASSIGNED LOCATION LOOKUP
-      =========================================
-
-      Only attempt this when:
-
-      - Restaurant ID is missing
-      - There is no conflicting Restaurant ID
-      - Existing matching has not already succeeded
-      - Order is recent
-
-      If Shopify refuses the lookup, it returns [] and
-      the rest of the dashboard keeps working.
-      */
 
       let assignedLocations = [];
 
@@ -805,11 +739,16 @@ async function getShopifyOrders(
             ).getTime()
           : 0;
 
+      const orderAge =
+        now - orderCreatedTime;
+
       const orderIsRecent =
         Number.isFinite(
           orderCreatedTime,
         ) &&
-        now - orderCreatedTime <=
+        orderCreatedTime > 0 &&
+        orderAge >= 0 &&
+        orderAge <=
           ASSIGNED_LOCATION_LOOKUP_AGE_MS;
 
       const shouldCheckAssignedLocation =
@@ -841,16 +780,9 @@ async function getShopifyOrders(
         if (
           assignedLocationMatchesRestaurant
         ) {
-          belongsToRestaurant =
-            true;
+          belongsToRestaurant = true;
         }
       }
-
-      /*
-      =========================================
-      ORIGINAL FALLBACK MATCHING
-      =========================================
-      */
 
       const canUseFallback =
         noFoodRestaurantId &&
@@ -867,8 +799,7 @@ async function getShopifyOrders(
       if (
         shippingMatchesRestaurant
       ) {
-        belongsToRestaurant =
-          true;
+        belongsToRestaurant = true;
       }
 
       const foodNameMatchesRestaurant =
@@ -883,15 +814,8 @@ async function getShopifyOrders(
       if (
         foodNameMatchesRestaurant
       ) {
-        belongsToRestaurant =
-          true;
+        belongsToRestaurant = true;
       }
-
-      /*
-      =========================================
-      DEBUG
-      =========================================
-      */
 
       console.log(
         "ORDER MATCH CHECK:",
@@ -942,22 +866,10 @@ async function getShopifyOrders(
         continue;
       }
 
-      /*
-      =========================================
-      RESTAURANT FOOD ITEMS
-      =========================================
-      */
-
       const restaurantFoodItems =
         matchingItems.length > 0
           ? matchingItems
           : foodItems;
-
-      /*
-      =========================================
-      TOTALS
-      =========================================
-      */
 
       const foodTotal =
         restaurantFoodItems.reduce(
@@ -987,12 +899,6 @@ async function getShopifyOrders(
               ),
             0,
           );
-
-      /*
-      =========================================
-      DASHBOARD ORDER
-      =========================================
-      */
 
       results.push({
         id:
@@ -1101,7 +1007,6 @@ async function getShopifyOrders(
     }
 
     return results;
-
   } catch (error) {
     console.error(
       "Meal Deal Hub Shopify order error:",
@@ -1154,10 +1059,6 @@ export async function loader({
       ),
     );
 
-  /*
-    New orders remain visible for 24 hours
-    unless already accepted or rejected.
-  */
   const ORDER_MAX_AGE_MS =
     24 * 60 * 60 * 1000;
 
@@ -1350,43 +1251,71 @@ export async function action({
         ? "accepted"
         : "rejected";
 
-    await db.orderDecision.upsert({
-      where: {
-        shopifyOrderId_restaurantId:
-          {
-            shopifyOrderId,
+    try {
+      await db.orderDecision.upsert({
+        where: {
+          shopifyOrderId_restaurantId:
+            {
+              shopifyOrderId,
 
-            restaurantId:
-              user.restaurant.id,
-          },
-      },
+              restaurantId:
+                user.restaurant.id,
+            },
+        },
 
-      update: {
-        status,
+        update: {
+          status,
 
+          orderNumber,
+
+          decidedAt:
+            new Date(),
+        },
+
+        create: {
+          shopifyOrderId,
+
+          orderNumber,
+
+          restaurantId:
+            user.restaurant.id,
+
+          status,
+        },
+      });
+
+      console.log(
+        "ORDER DECISION SAVED:",
+        {
+          shopifyOrderId,
+          orderNumber,
+          status,
+        },
+      );
+
+      return {
+        success: true,
+        shopifyOrderId,
         orderNumber,
+        status,
+      };
+    } catch (error) {
+      console.error(
+        "ORDER DECISION SAVE FAILED:",
+        error,
+      );
 
-        decidedAt:
-          new Date(),
-      },
+      return {
+        success: false,
 
-      create: {
         shopifyOrderId,
 
         orderNumber,
 
-        restaurantId:
-          user.restaurant.id,
-
-        status,
-      },
-    });
-
-    return {
-      success: true,
-      orderNumber,
-      status,
-    };
+        message:
+          "The order decision could not be saved.",
+      };
+    }
   }
 
   if (
@@ -1701,16 +1630,6 @@ export default function RestaurantDashboard() {
   const orderFetcher =
     useFetcher();
 
-  useEffect(() => {
-    const interval =
-      setInterval(() => {
-        revalidator.revalidate();
-      }, 5000);
-
-    return () =>
-      clearInterval(interval);
-  }, [revalidator]);
-
   const [
     activeTab,
     setActiveTab,
@@ -1738,6 +1657,11 @@ export default function RestaurantDashboard() {
     setSelectedOrderId,
   ] = useState(null);
 
+  const [
+    pendingOrderAction,
+    setPendingOrderAction,
+  ] = useState(null);
+
   const audioContextRef =
     useRef(null);
 
@@ -1747,11 +1671,118 @@ export default function RestaurantDashboard() {
   const soundEnabledRef =
     useRef(true);
 
+  /*
+  =========================================================
+  AUTO REFRESH
+  =========================================================
+
+  Don't start another revalidation while an order decision
+  is being sent or while a loader refresh is already running.
+  */
+
   useEffect(() => {
-    setOrders(
-      shopifyOrders || [],
-    );
-  }, [shopifyOrders]);
+    const interval =
+      setInterval(() => {
+        if (
+          orderFetcher.state ===
+            "idle" &&
+          revalidator.state ===
+            "idle"
+        ) {
+          revalidator.revalidate();
+        }
+      }, 5000);
+
+    return () =>
+      clearInterval(interval);
+  }, [
+    orderFetcher.state,
+    revalidator,
+    revalidator.state,
+  ]);
+
+  /*
+  =========================================================
+  SYNC LOADER ORDERS
+  =========================================================
+
+  While an Accept / Reject is pending, don't let a
+  background refresh overwrite the immediate local status.
+  */
+
+  useEffect(() => {
+    if (!pendingOrderAction) {
+      setOrders(
+        shopifyOrders || [],
+      );
+    }
+  }, [
+    shopifyOrders,
+    pendingOrderAction,
+  ]);
+
+  /*
+  =========================================================
+  ACCEPT / REJECT RESPONSE
+  =========================================================
+  */
+
+  useEffect(() => {
+    if (
+      !pendingOrderAction ||
+      orderFetcher.state !==
+        "idle" ||
+      !orderFetcher.data
+    ) {
+      return;
+    }
+
+    if (
+      orderFetcher.data.success ===
+      true
+    ) {
+      setPendingOrderAction(
+        null,
+      );
+
+      revalidator.revalidate();
+
+      return;
+    }
+
+    if (
+      orderFetcher.data.success ===
+      false
+    ) {
+      setOrders(
+        (currentOrders) =>
+          currentOrders.map(
+            (order) =>
+              order.id ===
+              pendingOrderAction.orderId
+                ? {
+                    ...order,
+                    status: "new",
+                  }
+                : order,
+          ),
+      );
+
+      setPendingOrderAction(
+        null,
+      );
+
+      window.alert(
+        orderFetcher.data.message ||
+          "The order could not be updated. Please try again.",
+      );
+    }
+  }, [
+    orderFetcher.state,
+    orderFetcher.data,
+    pendingOrderAction,
+    revalidator,
+  ]);
 
   useEffect(() => {
     try {
@@ -1859,6 +1890,94 @@ export default function RestaurantDashboard() {
   const isSaving =
     navigation.state ===
     "submitting";
+
+  const orderActionSaving =
+    orderFetcher.state !==
+      "idle" ||
+    Boolean(
+      pendingOrderAction,
+    );
+
+  function handleOrderDecision(
+    order,
+    action,
+  ) {
+    if (!order) {
+      return;
+    }
+
+    if (orderActionSaving) {
+      return;
+    }
+
+    const status =
+      action === "accept"
+        ? "accepted"
+        : "rejected";
+
+    /*
+    Mark this order as pending BEFORE sending the request.
+    */
+
+    setPendingOrderAction({
+      orderId:
+        order.id,
+
+      action,
+    });
+
+    /*
+    Immediately change the order locally.
+
+    This means ONE PRESS immediately moves it out of
+    New Orders and into Previous Orders.
+    */
+
+    setOrders(
+      (currentOrders) =>
+        currentOrders.map(
+          (currentOrder) =>
+            currentOrder.id ===
+            order.id
+              ? {
+                  ...currentOrder,
+                  status,
+                }
+              : currentOrder,
+        ),
+    );
+
+    /*
+    Submit the actual decision to the server/database.
+    */
+
+    const formData =
+      new FormData();
+
+    formData.set(
+      "intent",
+      action === "accept"
+        ? "accept-order"
+        : "reject-order",
+    );
+
+    formData.set(
+      "shopifyOrderId",
+      order.id,
+    );
+
+    formData.set(
+      "orderNumber",
+      order.orderNumber,
+    );
+
+    orderFetcher.submit(
+      formData,
+      {
+        method: "post",
+      },
+    );
+  }
 
   function stopAlarm() {
     if (
@@ -2285,75 +2404,75 @@ export default function RestaurantDashboard() {
                     styles.actions
                   }
                 >
-                  <orderFetcher.Form
-                    method="post"
+                  <button
+                    type="button"
+                    disabled={
+                      orderActionSaving
+                    }
+                    style={{
+                      ...styles.acceptButton,
+
+                      opacity:
+                        orderActionSaving
+                          ? 0.6
+                          : 1,
+
+                      cursor:
+                        orderActionSaving
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                    onClick={() =>
+                      handleOrderDecision(
+                        firstNewOrder,
+                        "accept",
+                      )
+                    }
                   >
-                    <input
-                      type="hidden"
-                      name="intent"
-                      value="accept-order"
-                    />
+                    {pendingOrderAction
+                      ?.orderId ===
+                        firstNewOrder.id &&
+                    pendingOrderAction
+                      ?.action ===
+                        "accept"
+                      ? "ACCEPTING..."
+                      : "✓ ACCEPT ORDER"}
+                  </button>
 
-                    <input
-                      type="hidden"
-                      name="shopifyOrderId"
-                      value={
-                        firstNewOrder.id
-                      }
-                    />
+                  <button
+                    type="button"
+                    disabled={
+                      orderActionSaving
+                    }
+                    style={{
+                      ...styles.rejectButton,
 
-                    <input
-                      type="hidden"
-                      name="orderNumber"
-                      value={
-                        firstNewOrder.orderNumber
-                      }
-                    />
+                      opacity:
+                        orderActionSaving
+                          ? 0.6
+                          : 1,
 
-                    <button
-                      type="submit"
-                      style={
-                        styles.acceptButton
-                      }
-                    >
-                      ✓ ACCEPT ORDER
-                    </button>
-                  </orderFetcher.Form>
-
-                  <orderFetcher.Form
-                    method="post"
+                      cursor:
+                        orderActionSaving
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                    onClick={() =>
+                      handleOrderDecision(
+                        firstNewOrder,
+                        "reject",
+                      )
+                    }
                   >
-                    <input
-                      type="hidden"
-                      name="intent"
-                      value="reject-order"
-                    />
-
-                    <input
-                      type="hidden"
-                      name="shopifyOrderId"
-                      value={
-                        firstNewOrder.id
-                      }
-                    />
-
-                    <input
-                      type="hidden"
-                      name="orderNumber"
-                      value={
-                        firstNewOrder.orderNumber
-                      }
-                    />
-
-                    <button
-                      type="submit"
-                      style={
-                        styles.rejectButton
-                      }
-                    >
-                      × REJECT ORDER
-                    </button>
-                  </orderFetcher.Form>
+                    {pendingOrderAction
+                      ?.orderId ===
+                        firstNewOrder.id &&
+                    pendingOrderAction
+                      ?.action ===
+                        "reject"
+                      ? "REJECTING..."
+                      : "× REJECT ORDER"}
+                  </button>
                 </div>
               </section>
             ) : (
