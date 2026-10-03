@@ -27,8 +27,7 @@ const SERVICE_FEE_PREFIX =
 
 function getSessionSecret() {
   return (
-    process.env
-      .RESTAURANT_SESSION_SECRET ||
+    process.env.RESTAURANT_SESSION_SECRET ||
     "development-only-change-before-production"
   );
 }
@@ -69,14 +68,8 @@ function readCookie(request) {
           }
 
           return [
-            cookie.slice(
-              0,
-              index,
-            ),
-
-            cookie.slice(
-              index + 1,
-            ),
+            cookie.slice(0, index),
+            cookie.slice(index + 1),
           ];
         }),
     );
@@ -202,7 +195,38 @@ function normaliseText(value) {
     value || "",
   )
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      " ",
+    )
+    .replace(
+      /\s+/g,
+      " ",
+    )
+    .trim();
+}
+
+
+function textMatches(
+  first,
+  second,
+) {
+  const a =
+    normaliseText(first);
+
+  const b =
+    normaliseText(second);
+
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a === b ||
+    a.includes(b) ||
+    b.includes(a)
+  );
 }
 
 
@@ -498,25 +522,49 @@ function getCurrentPaymentWeek() {
 function getOrderType(
   order,
 ) {
-  /*
-    Shopify local-pickup orders
-    normally do not have a shipping
-    address.
+  const shippingTitle =
+    normaliseText(
+      order.shippingLine
+        ?.title,
+    );
 
-    Delivery orders normally do.
-  */
+  const shippingCode =
+    normaliseText(
+      order.shippingLine
+        ?.code,
+    );
+
+  const combined =
+    `${shippingTitle} ${shippingCode}`;
 
   if (
-    !order.shippingAddress
+    combined.includes(
+      "pickup",
+    ) ||
+    combined.includes(
+      "pick up",
+    ) ||
+    combined.includes(
+      "collection",
+    ) ||
+    combined.includes(
+      "collect",
+    )
   ) {
     return "pickup";
   }
 
-  return "delivery";
+  if (
+    order.shippingAddress
+  ) {
+    return "delivery";
+  }
+
+  return "pickup";
 }
 
 
-function getPickupLocation(
+function getShippingLocation(
   order,
 ) {
   return (
@@ -573,7 +621,6 @@ async function getShopifyOrders(
               shippingLine {
                 title
                 code
-
                 deliveryCategory
               }
 
@@ -640,7 +687,6 @@ async function getShopifyOrders(
 
     return nodes
       .map((order) => {
-
         const foodItems =
           order.lineItems.nodes.filter(
             (item) =>
@@ -650,118 +696,27 @@ async function getShopifyOrders(
           );
 
 
-        const matchingItems =
-          foodItems.filter(
-            (item) =>
-              getAttribute(
-                item.customAttributes,
-                "_Restaurant ID",
-              ) ===
-              restaurantId,
-          );
-
-
-        const orderType =
-          getOrderType(order);
-
-
-        const pickupLocation =
-          getPickupLocation(
-            order,
-          );
-
-
-        /*
-          Temporary diagnostic for
-          order #1033.
-        */
         if (
-          order.name ===
-          "#1033"
+          foodItems.length === 0
         ) {
-          console.log(
-            "DEBUG ORDER #1033:",
-            {
-              orderName:
-                order.name,
-
-              createdAt:
-                order.createdAt,
-
-              londonTime:
-                londonTime(
-                  order.createdAt,
-                ),
-
-              restaurantLookingFor:
-                restaurantId,
-
-              restaurantName,
-
-              orderType,
-
-              pickupLocation,
-
-              shippingLine:
-                order.shippingLine,
-
-              shippingAddress:
-                order.shippingAddress,
-
-              lineItems:
-                order.lineItems.nodes.map(
-                  (item) => ({
-                    name:
-                      item.name,
-
-                    quantity:
-                      item.quantity,
-
-                    restaurantId:
-                      getAttribute(
-                        item.customAttributes,
-                        "_Restaurant ID",
-                      ),
-
-                    customAttributes:
-                      item.customAttributes,
-                  }),
-                ),
-            },
-          );
+          return null;
         }
 
 
-        /*
-          PRIMARY RESTAURANT MATCH
+        const matchingItems =
+          foodItems.filter(
+            (item) =>
+              normaliseText(
+                getAttribute(
+                  item.customAttributes,
+                  "_Restaurant ID",
+                ),
+              ) ===
+              normaliseText(
+                restaurantId,
+              ),
+          );
 
-          Normal orders should match
-          using the hidden Restaurant ID.
-        */
-
-        let belongsToRestaurant =
-          matchingItems.length >
-          0;
-
-
-        /*
-          PICKUP FALLBACK
-
-          Some Shopify pickup orders have
-          reached the order without the
-          hidden line-item Restaurant ID.
-
-          If there is no Restaurant ID on
-          any food line, we can use the
-          Shopify pickup location as a
-          fallback.
-
-          We only do this for pickup orders
-          and only when ALL food items are
-          missing Restaurant ID, so an order
-          explicitly belonging to another
-          restaurant cannot be reassigned.
-        */
 
         const foodRestaurantIds =
           foodItems
@@ -775,48 +730,152 @@ async function getShopifyOrders(
 
 
         const noFoodRestaurantId =
-          foodItems.length >
-            0 &&
           foodRestaurantIds.length ===
-            0;
+          0;
 
 
-        const pickupMatchesRestaurant =
-          orderType ===
-            "pickup" &&
+        const orderType =
+          getOrderType(
+            order,
+          );
+
+
+        const shippingLocation =
+          getShippingLocation(
+            order,
+          );
+
+
+        /*
+          PRIMARY MATCH
+
+          If Shopify preserved the
+          Restaurant ID on any food
+          item, that is always used.
+        */
+
+        let belongsToRestaurant =
+          matchingItems.length >
+          0;
+
+
+        /*
+          FALLBACK MATCH
+
+          Some Shopify orders are
+          arriving without any
+          _Restaurant ID properties.
+
+          In that situation only, we
+          compare Shopify's shipping /
+          pickup information with the
+          restaurant name.
+
+          This works for BOTH pickup
+          and delivery orders.
+
+          We never use this fallback
+          if Shopify supplied a
+          Restaurant ID belonging to
+          another restaurant.
+        */
+
+        const shippingMatchesRestaurant =
           noFoodRestaurantId &&
-          restaurantName &&
-          pickupLocation &&
-          (
-            normaliseText(
-              pickupLocation,
-            ) ===
-              normaliseText(
-                restaurantName,
-              ) ||
-            normaliseText(
-              pickupLocation,
-            ).includes(
-              normaliseText(
-                restaurantName,
-              ),
-            ) ||
-            normaliseText(
-              restaurantName,
-            ).includes(
-              normaliseText(
-                pickupLocation,
-              ),
-            )
+          textMatches(
+            shippingLocation,
+            restaurantName,
           );
 
 
         if (
-          pickupMatchesRestaurant
+          shippingMatchesRestaurant
         ) {
           belongsToRestaurant =
             true;
         }
+
+
+        /*
+          Extra fallback for orders
+          where Shopify's shipping
+          line is a generic name such
+          as "Local Delivery".
+
+          The order can only use this
+          fallback when ALL food
+          Restaurant IDs are missing.
+
+          We inspect food-line text
+          for the restaurant name,
+          because some Shopify themes
+          / product configurations can
+          carry the restaurant name in
+          the line title even when the
+          custom property disappears.
+        */
+
+        const foodNameMatchesRestaurant =
+          noFoodRestaurantId &&
+          foodItems.some(
+            (item) =>
+              textMatches(
+                item.name,
+                restaurantName,
+              ),
+          );
+
+
+        if (
+          foodNameMatchesRestaurant
+        ) {
+          belongsToRestaurant =
+            true;
+        }
+
+
+        /*
+          IMPORTANT:
+
+          A generic "Local Delivery"
+          shipping line by itself does
+          NOT identify a restaurant.
+
+          Therefore we do not assign
+          generic delivery orders to
+          every restaurant.
+        */
+
+
+        console.log(
+          "ORDER MATCH CHECK:",
+          {
+            order:
+              order.name,
+
+            restaurantId,
+
+            restaurantName,
+
+            orderType,
+
+            shippingLocation,
+
+            foodRestaurantIds,
+
+            normalIdMatch:
+              matchingItems.length >
+              0,
+
+            shippingMatch:
+              shippingMatchesRestaurant,
+
+            foodNameMatch:
+              foodNameMatchesRestaurant,
+
+            belongsToRestaurant,
+          },
+        );
 
 
         if (
@@ -827,13 +886,14 @@ async function getShopifyOrders(
 
 
         /*
-          If the normal Restaurant ID
-          match worked, use those items.
+          If Restaurant ID matching
+          worked, use only those
+          restaurant food items.
 
-          If we're using the pickup
-          fallback, all non-service-fee
-          food items belong to this
-          pickup order.
+          If fallback matching was
+          required, all food items are
+          used because Shopify supplied
+          no Restaurant ID at all.
         */
 
         const restaurantFoodItems =
@@ -898,7 +958,11 @@ async function getShopifyOrders(
 
           orderType,
 
-          pickupLocation,
+          pickupLocation:
+            orderType ===
+            "pickup"
+              ? shippingLocation
+              : "",
 
           time:
             londonTime(
