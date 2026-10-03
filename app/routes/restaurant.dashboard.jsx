@@ -364,13 +364,6 @@ function getPaymentWeekFromDateKey(
       dateKey,
     );
 
-  /*
-    JavaScript:
-    Sunday = 0
-    Monday = 1
-    ...
-    Saturday = 6
-  */
   const day =
     date.getUTCDay();
 
@@ -488,14 +481,6 @@ function getDeliveryType(
     return "PICKUP";
   }
 
-  /*
-    Local pickup orders can sometimes
-    have no delivery address.
-
-    We do NOT use a £0 shipping price
-    to determine pickup because free
-    delivery is still delivery.
-  */
   if (
     !shippingAddress &&
     !shippingLine
@@ -612,6 +597,54 @@ async function getShopifyOrders(
 
     return nodes
       .map((order) => {
+        /*
+          TEMPORARY DEBUG FOR ORDER #1032.
+
+          This will show us exactly what
+          Shopify is returning for the
+          restaurant ID and pickup method.
+        */
+        if (
+          order.name === "#1032"
+        ) {
+          console.log(
+            "DEBUG ORDER #1032:",
+            {
+              orderName:
+                order.name,
+
+              restaurantLookingFor:
+                restaurantId,
+
+              shippingLine:
+                order.shippingLine,
+
+              shippingAddress:
+                order.shippingAddress,
+
+              lineItems:
+                order.lineItems.nodes.map(
+                  (item) => ({
+                    name:
+                      item.name,
+
+                    quantity:
+                      item.quantity,
+
+                    restaurantId:
+                      getAttribute(
+                        item.customAttributes,
+                        "_Restaurant ID",
+                      ),
+
+                    customAttributes:
+                      item.customAttributes,
+                  }),
+                ),
+            },
+          );
+        }
+
         const matchingItems =
           order.lineItems.nodes.filter(
             (item) =>
@@ -643,15 +676,6 @@ async function getShopifyOrders(
             0,
           );
 
-        /*
-          Shopify returns the selected
-          service-fee variant in the
-          line-item name, for example:
-
-          Meal Deal Hub Service Fee - £0.99
-
-          Keep startsWith here.
-        */
         const serviceFee =
           order.lineItems.nodes
             .filter(
@@ -1019,11 +1043,6 @@ async function saveCompletedPayoutWeeks(
       );
     }
   } catch (error) {
-    /*
-      Do not break the restaurant
-      dashboard if payout history
-      cannot be refreshed.
-    */
     console.error(
       "Meal Deal Hub payout history error:",
       error,
@@ -1116,10 +1135,6 @@ export async function loader({
         },
       );
 
-  /*
-    Save finished Monday-Sunday
-    payment periods to the database.
-  */
   await saveCompletedPayoutWeeks(
     user.restaurant.id,
     ordersWithDecisions,
@@ -1141,11 +1156,6 @@ export async function loader({
       },
     );
 
-  /*
-    Prisma Decimal values should be
-    converted before returning loader
-    data to the browser.
-  */
   const payoutHistory =
     payoutHistoryRaw.map(
       (payout) => ({
@@ -1429,13 +1439,6 @@ function isCurrentAcceptedOrder(
     return false;
   }
 
-  /*
-    Orders accepted today stay under
-    Current Orders.
-
-    Older accepted orders move into
-    Previous Orders automatically.
-  */
   return (
     londonDateKey(
       order.createdAt,
