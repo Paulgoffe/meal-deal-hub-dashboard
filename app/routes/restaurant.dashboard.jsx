@@ -402,6 +402,31 @@ async function getShopifyOrders(restaurantId) {
             0,
           );
 
+        /*
+          Find the Meal Deal Hub customer
+          service fee line item on this order.
+
+          This fee belongs to Meal Deal Hub
+          and is NOT included in restaurant
+          earnings.
+        */
+        const serviceFee =
+          order.lineItems.nodes
+            .filter(
+              (item) =>
+                item.name ===
+                "Meal Deal Hub Service Fee",
+            )
+            .reduce(
+              (total, item) =>
+                total +
+                Number(
+                  item.originalTotalSet
+                    ?.shopMoney?.amount || 0,
+                ),
+              0,
+            );
+
         return {
           id: order.id,
           orderNumber: order.name,
@@ -465,7 +490,7 @@ async function getShopifyOrders(restaurantId) {
             Customer service fees are retained by
             Meal Deal Hub and are not restaurant income.
           */
-          serviceFee: 0,
+          serviceFee,
 
           total: Number(
             order.currentTotalPriceSet
