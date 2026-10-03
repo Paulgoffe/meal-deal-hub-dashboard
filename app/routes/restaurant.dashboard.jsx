@@ -125,6 +125,160 @@ function londonTime(dateString) {
   }).format(new Date(dateString));
 }
 
+/*
+  ============================================================
+  WEEKLY PAYMENT DATE HELPERS
+  ============================================================
+
+  Restaurant payment week:
+  Monday 00:00 through Sunday 23:59 London time.
+
+  The expected payout is the Wednesday after that Sunday.
+*/
+
+function londonDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+
+  const get = (type) =>
+    parts.find((part) => part.type === type)?.value || "";
+
+  return {
+    year: Number(get("year")),
+    month: Number(get("month")),
+    day: Number(get("day")),
+    weekday: get("weekday"),
+  };
+}
+
+function dateKeyFromParts(year, month, day) {
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+function londonDateKey(dateString) {
+  if (!dateString) return "";
+
+  const parts = londonDateParts(
+    new Date(dateString),
+  );
+
+  return dateKeyFromParts(
+    parts.year,
+    parts.month,
+    parts.day,
+  );
+}
+
+function getCurrentPaymentWeek() {
+  const londonNow = londonDateParts();
+
+  const weekdayNumbers = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6,
+  };
+
+  const daysSinceMonday =
+    weekdayNumbers[londonNow.weekday] ?? 0;
+
+  /*
+    UTC is being used here only as a calendar calculator.
+    The actual current date above is first determined using
+    Europe/London.
+  */
+  const todayCalendar = new Date(
+    Date.UTC(
+      londonNow.year,
+      londonNow.month - 1,
+      londonNow.day,
+    ),
+  );
+
+  const mondayCalendar = new Date(
+    todayCalendar,
+  );
+
+  mondayCalendar.setUTCDate(
+    todayCalendar.getUTCDate() -
+      daysSinceMonday,
+  );
+
+  const sundayCalendar = new Date(
+    mondayCalendar,
+  );
+
+  sundayCalendar.setUTCDate(
+    mondayCalendar.getUTCDate() + 6,
+  );
+
+  /*
+    Monday + 9 days = Wednesday following
+    the end of the Monday-Sunday week.
+  */
+  const payoutCalendar = new Date(
+    mondayCalendar,
+  );
+
+  payoutCalendar.setUTCDate(
+    mondayCalendar.getUTCDate() + 9,
+  );
+
+  function calendarKey(date) {
+    return dateKeyFromParts(
+      date.getUTCFullYear(),
+      date.getUTCMonth() + 1,
+      date.getUTCDate(),
+    );
+  }
+
+  function displayDate(date) {
+    return new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      },
+    ).format(date);
+  }
+
+  return {
+    startKey: calendarKey(
+      mondayCalendar,
+    ),
+
+    endKey: calendarKey(
+      sundayCalendar,
+    ),
+
+    startLabel: displayDate(
+      mondayCalendar,
+    ),
+
+    endLabel: displayDate(
+      sundayCalendar,
+    ),
+
+    payoutLabel: displayDate(
+      payoutCalendar,
+    ),
+  };
+}
+
 async function getShopifyOrders(restaurantId) {
   try {
     const { admin } =
@@ -253,6 +407,7 @@ async function getShopifyOrders(restaurantId) {
           orderNumber: order.name,
           createdAt: order.createdAt,
           restaurantId,
+
           time: londonTime(
             order.createdAt,
           ),
@@ -306,6 +461,10 @@ async function getShopifyOrders(restaurantId) {
               ?.shopMoney?.amount || 0,
           ),
 
+          /*
+            Customer service fees are retained by
+            Meal Deal Hub and are not restaurant income.
+          */
           serviceFee: 0,
 
           total: Number(
@@ -397,9 +556,12 @@ export async function loader({ request }) {
 
     restaurant: {
       id: user.restaurant.id,
+
       restaurantId:
         user.restaurant.restaurantId,
+
       name: user.restaurant.name,
+
       acceptingOrders:
         user.restaurant.acceptingOrders,
     },
@@ -425,12 +587,16 @@ export async function action({ request }) {
 
   console.log("ORDER ACTION RECEIVED:", {
     intent,
+
     shopifyOrderId:
       formData.get("shopifyOrderId"),
+
     orderNumber:
       formData.get("orderNumber"),
+
     restaurantDbId:
       user.restaurant.id,
+
     restaurantId:
       user.restaurant.restaurantId,
   });
@@ -464,6 +630,7 @@ export async function action({ request }) {
       where: {
         shopifyOrderId_restaurantId: {
           shopifyOrderId,
+
           restaurantId:
             user.restaurant.id,
         },
@@ -478,8 +645,10 @@ export async function action({ request }) {
       create: {
         shopifyOrderId,
         orderNumber,
+
         restaurantId:
           user.restaurant.id,
+
         status,
       },
     });
@@ -496,12 +665,15 @@ export async function action({ request }) {
       where: {
         id: user.restaurant.id,
       },
+
       data: {
         acceptingOrders: false,
       },
     });
 
-    return { success: true };
+    return {
+      success: true,
+    };
   }
 
   if (intent === "resume-orders") {
@@ -509,15 +681,20 @@ export async function action({ request }) {
       where: {
         id: user.restaurant.id,
       },
+
       data: {
         acceptingOrders: true,
       },
     });
 
-    return { success: true };
+    return {
+      success: true,
+    };
   }
 
-  return { success: false };
+  return {
+    success: false,
+  };
 }
 
 function money(value) {
@@ -576,11 +753,41 @@ export default function RestaurantDashboard() {
         order.status === "new",
     );
 
+  /*
+    Keep ALL accepted orders here for the
+    Current Orders section.
+  */
   const acceptedOrders =
     restaurantOrders.filter(
       (order) =>
         order.status === "accepted",
     );
+
+  /*
+    Work out the current Monday-Sunday
+    payment period in London time.
+  */
+  const paymentWeek =
+    getCurrentPaymentWeek();
+
+  /*
+    Only these accepted orders count toward
+    the current week's payment figures.
+  */
+  const weeklyAcceptedOrders =
+    acceptedOrders.filter((order) => {
+      const orderDate =
+        londonDateKey(
+          order.createdAt,
+        );
+
+      return (
+        orderDate >=
+          paymentWeek.startKey &&
+        orderDate <=
+          paymentWeek.endKey
+      );
+    });
 
   const firstNewOrder =
     newOrders[0];
@@ -638,6 +845,7 @@ export default function RestaurantDashboard() {
       );
 
       oscillator.connect(gain);
+
       gain.connect(
         context.destination,
       );
@@ -681,17 +889,38 @@ export default function RestaurantDashboard() {
     soundEnabled,
   ]);
 
+  /*
+    ==========================================================
+    CURRENT WEEK PAYMENT TOTALS
+    ==========================================================
+
+    Food:
+    Restaurant receives 90%.
+
+    Delivery:
+    Restaurant receives 100%.
+
+    Service fee:
+    Retained by Meal Deal Hub.
+  */
+
   const acceptedFoodSales =
-    acceptedOrders.reduce(
+    weeklyAcceptedOrders.reduce(
       (total, order) =>
-        total + order.foodTotal,
+        total +
+        Number(
+          order.foodTotal || 0,
+        ),
       0,
     );
 
   const deliveryIncome =
-    acceptedOrders.reduce(
+    weeklyAcceptedOrders.reduce(
       (total, order) =>
-        total + order.delivery,
+        total +
+        Number(
+          order.delivery || 0,
+        ),
       0,
     );
 
@@ -703,9 +932,12 @@ export default function RestaurantDashboard() {
     deliveryIncome;
 
   const serviceFees =
-    acceptedOrders.reduce(
+    weeklyAcceptedOrders.reduce(
       (total, order) =>
-        total + order.serviceFee,
+        total +
+        Number(
+          order.serviceFee || 0,
+        ),
       0,
     );
 
@@ -1198,7 +1430,33 @@ export default function RestaurantDashboard() {
               <p>
                 Payout period:{" "}
                 <strong>
-                  Monday – Sunday
+                  {
+                    paymentWeek.startLabel
+                  }
+                  {" – "}
+                  {
+                    paymentWeek.endLabel
+                  }
+                </strong>
+              </p>
+
+              <p>
+                Expected payout:{" "}
+                <strong>
+                  Wednesday{" "}
+                  {
+                    paymentWeek.payoutLabel
+                  }
+                </strong>
+              </p>
+
+              <p>
+                Accepted orders this
+                week:{" "}
+                <strong>
+                  {
+                    weeklyAcceptedOrders.length
+                  }
                 </strong>
               </p>
 
