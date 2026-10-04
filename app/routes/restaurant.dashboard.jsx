@@ -1018,6 +1018,7 @@ async function getShopifyOrders(
 }
 
 export async function loader({
+ export async function loader({
   request,
 }) {
   const user =
@@ -1033,8 +1034,13 @@ export async function loader({
 
   /*
   =========================================================
-  TEMPORARY SHOPIFY SCOPE CHECK
+  TEMPORARY SHOPIFY SCOPE + ORDER #1053 PAYMENT CHECK
   =========================================================
+
+  READ ONLY.
+
+  This does NOT capture, void, refund or otherwise
+  change the payment.
   */
 
   try {
@@ -1042,6 +1048,12 @@ export async function loader({
       await shopify.unauthenticated.admin(
         SHOP_DOMAIN,
       );
+
+    /*
+    ---------------------------------------------------------
+    CHECK GRANTED SCOPES
+    ---------------------------------------------------------
+    */
 
     const scopeResponse =
       await admin.graphql(
@@ -1090,9 +1102,129 @@ export async function loader({
         ),
       );
     }
+
+    /*
+    ---------------------------------------------------------
+    FIND TEST ORDER #1053
+    ---------------------------------------------------------
+    */
+
+    const testOrderResponse =
+      await admin.graphql(
+        `
+          query MealDealHubPaymentTestOrder {
+            orders(
+              first: 1
+              query: "name:#1053"
+            ) {
+              nodes {
+                id
+                name
+                displayFinancialStatus
+                capturable
+
+                currentTotalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+
+                  presentmentMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+
+                transactions(first: 20) {
+                  id
+                  kind
+                  status
+                  gateway
+                  formattedGateway
+                  manuallyCapturable
+                  manualPaymentGateway
+                  multiCapturable
+                  authorizationExpiresAt
+                  createdAt
+                  test
+
+                  amountSet {
+                    shopMoney {
+                      amount
+                      currencyCode
+                    }
+
+                    presentmentMoney {
+                      amount
+                      currencyCode
+                    }
+                  }
+
+                  parentTransaction {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        `,
+      );
+
+    const testOrderResult =
+      await testOrderResponse.json();
+
+    if (
+      testOrderResult.errors?.length
+    ) {
+      console.error(
+        "ORDER #1053 PAYMENT CHECK GRAPHQL ERRORS:",
+        JSON.stringify(
+          testOrderResult.errors,
+        ),
+      );
+    }
+
+    const testOrder =
+      testOrderResult.data
+        ?.orders
+        ?.nodes?.[0] ||
+      null;
+
+    if (!testOrder) {
+      console.log(
+        "ORDER #1053 PAYMENT CHECK: ORDER NOT FOUND",
+      );
+    } else {
+      console.log(
+        "ORDER #1053 PAYMENT CHECK:",
+        JSON.stringify(
+          {
+            id:
+              testOrder.id,
+
+            name:
+              testOrder.name,
+
+            financialStatus:
+              testOrder.displayFinancialStatus,
+
+            capturable:
+              testOrder.capturable,
+
+            total:
+              testOrder.currentTotalPriceSet,
+
+            transactions:
+              testOrder.transactions,
+          },
+          null,
+          2,
+        ),
+      );
+    }
   } catch (error) {
     console.error(
-      "SHOPIFY SCOPE CHECK FAILED:",
+      "SHOPIFY PAYMENT CHECK FAILED:",
       error,
     );
   }
@@ -1166,6 +1298,78 @@ export async function loader({
       .map((order) => {
         const savedStatus =
           decisionMap.get(
+            order.id,
+          );
+
+        return {
+          ...order,
+
+          status:
+            savedStatus ||
+            order.status,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(
+            b.createdAt,
+          ).getTime() -
+          new Date(
+            a.createdAt,
+          ).getTime(),
+      );
+
+  console.log(
+    "DASHBOARD ORDERS:",
+    JSON.stringify(
+      ordersWithDecisions.map(
+        (order) => ({
+          order:
+            order.orderNumber,
+
+          restaurantId:
+            order.restaurantId,
+
+          status:
+            order.status,
+
+          createdAt:
+            order.createdAt,
+        }),
+      ),
+    ),
+  );
+
+  return {
+    user: {
+      email:
+        user.email,
+
+      firstName:
+        user.firstName,
+
+      lastName:
+        user.lastName,
+    },
+
+    restaurant: {
+      id:
+        user.restaurant.id,
+
+      restaurantId:
+        user.restaurant.restaurantId,
+
+      name:
+        user.restaurant.name,
+
+      acceptingOrders:
+        user.restaurant.acceptingOrders,
+    },
+
+    orders:
+      ordersWithDecisions,
+  };
+}
             order.id,
           );
 
