@@ -1416,7 +1416,7 @@ export async function action({
     },
   );
 
-  if (
+   if (
     intent ===
       "accept-order" ||
     intent ===
@@ -1455,6 +1455,484 @@ export async function action({
         : "rejected";
 
     try {
+      /*
+      ======================================================
+      ACCEPT ORDER - CAPTURE PAYMENT FIRST
+      ======================================================
+      */
+
+      if (
+        intent ===
+        "accept-order"
+      ) {
+        const { admin } =
+          await shopify.unauthenticated.admin(
+            SHOP_DOMAIN,
+          );
+
+        /*
+        ------------------------------------------------------
+        GET ORDER + PAYMENT TRANSACTIONS
+        ------------------------------------------------------
+        */
+
+        const paymentResponse =
+          await admin.graphql(
+            `
+              query MealDealHubOrderPayment(
+                $id: ID!
+              ) {
+                order(id: $id) {
+                  id
+                  name
+                  displayFinancialStatus
+
+                  currentTotalPriceSet {
+                    shopMoney {
+                      amount
+                      currencyCode
+                    }
+
+                    presentmentMoney {
+                      amount
+                      currencyCode
+                    }
+                  }
+
+                  transactions(first: 20) {
+                    id
+                    kind
+                    status
+                    gateway
+                    test
+                    multiCapturable
+
+                    amountSet {
+                      shopMoney {
+                        amount
+                        currencyCode
+                      }
+
+                      presentmentMoney {
+                        amount
+                        currencyCode
+                      }
+                    }
+
+                    parentTransaction {
+                      id
+                    }
+                  }
+                }
+              }
+            `,
+            {
+              variables: {
+                id:
+                  shopifyOrderId,
+              },
+            },
+          );
+
+        const paymentResult =
+          await paymentResponse.json();
+
+        if (
+          paymentResult.errors?.length
+        ) {
+          console.error(
+            "PAYMENT LOOKUP GRAPHQL ERRORS:",
+            JSON.stringify(
+              paymentResult.errors,
+            ),
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Payment could not be checked. Order was not accepted.",
+          };
+        }
+
+        const shopifyOrder =
+          paymentResult.data?.order;
+
+        if (!shopifyOrder) {
+          console.error(
+            "PAYMENT LOOKUP: ORDER NOT FOUND",
+            {
+              shopifyOrderId,
+              orderNumber,
+            },
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Shopify order could not be found. Order was not accepted.",
+          };
+        }
+
+        /*
+        ------------------------------------------------------
+        SECURITY CHECK
+        Make sure the submitted order number matches Shopify.
+        ------------------------------------------------------
+        */
+
+        if (
+          shopifyOrder.name !==
+          orderNumber
+        ) {
+          console.error(
+            "PAYMENT ORDER NUMBER MISMATCH:",
+            {
+              submitted:
+                orderNumber,
+
+              shopify:
+                shopifyOrder.name,
+
+              shopifyOrderId,
+            },
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Order verification failed. Order was not accepted.",
+          };
+        }
+
+        /*
+        ------------------------------------------------------
+        IDEMPOTENCY CHECK
+
+        If Shopify already has a successful SALE or CAPTURE
+        transaction, don't attempt to charge again.
+        ------------------------------------------------------
+        */
+
+        const successfulCapture =
+          shopifyOrder.transactions.find(
+            (transaction) =>
+              transaction.status ===
+                "SUCCESS" &&
+              (
+                transaction.kind ===
+                  "CAPTURE" ||
+                transaction.kind ===
+                  "SALE"
+              ),
+          );
+
+        if (successfulCapture) {
+          console.log(
+            "PAYMENT ALREADY CAPTURED:",
+            {
+              shopifyOrderId,
+
+              orderNumber,
+
+              transactionId:
+                successfulCapture.id,
+            },
+          );
+        } else {
+          /*
+          ----------------------------------------------------
+          FIND SUCCESSFUL AUTHORIZATION
+          ----------------------------------------------------
+          */
+
+          const authorization =
+            shopifyOrder.transactions.find(
+              (transaction) =>
+                transaction.kind ===
+                  "AUTHORIZATION" &&
+                transaction.status ===
+                  "SUCCESS",
+            );
+
+          if (!authorization) {
+            console.error(
+              "NO SUCCESSFUL AUTHORIZATION:",
+              {
+                shopifyOrderId,
+
+                orderNumber,
+
+                financialStatus:
+                  shopifyOrder
+                    .displayFinancialStatus,
+
+                transactions:
+                  shopifyOrder
+                    .transactions,
+              },
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "No valid payment authorization was found. Order was not accepted.",
+            };
+          }
+
+          const captureAmount =
+            authorization.amountSet
+              ?.presentmentMoney
+              ?.amount ||
+            authorization.amountSet
+              ?.shopMoney
+              ?.amount;
+
+          const captureCurrency =
+            authorization.amountSet
+              ?.presentmentMoney
+              ?.currencyCode ||
+            authorization.amountSet
+              ?.shopMoney
+              ?.currencyCode;
+
+          if (!captureAmount) {
+            console.error(
+              "CAPTURE AMOUNT MISSING:",
+              {
+                shopifyOrderId,
+
+                orderNumber,
+
+                authorization,
+              },
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment amount could not be determined. Order was not accepted.",
+            };
+          }
+
+          console.log(
+            "ATTEMPTING PAYMENT CAPTURE:",
+            {
+              shopifyOrderId,
+
+              orderNumber,
+
+              authorizationId:
+                authorization.id,
+
+              amount:
+                captureAmount,
+
+              currency:
+                captureCurrency,
+
+              gateway:
+                authorization.gateway,
+
+              test:
+                authorization.test,
+            },
+          );
+
+          /*
+          ----------------------------------------------------
+          CAPTURE AUTHORIZED PAYMENT
+          ----------------------------------------------------
+          */
+
+          const captureResponse =
+            await admin.graphql(
+              `
+                mutation MealDealHubCaptureOrder(
+                  $input: OrderCaptureInput!
+                ) {
+                  orderCapture(
+                    input: $input
+                  ) {
+                    transaction {
+                      id
+                      kind
+                      status
+                      test
+
+                      amountSet {
+                        shopMoney {
+                          amount
+                          currencyCode
+                        }
+
+                        presentmentMoney {
+                          amount
+                          currencyCode
+                        }
+                      }
+                    }
+
+                    userErrors {
+                      field
+                      message
+                    }
+                  }
+                }
+              `,
+              {
+                variables: {
+                  input: {
+                    id:
+                      shopifyOrderId,
+
+                    parentTransactionId:
+                      authorization.id,
+
+                    amount:
+                      captureAmount,
+
+                    ...(captureCurrency
+                      ? {
+                          currency:
+                            captureCurrency,
+                        }
+                      : {}),
+                  },
+                },
+              },
+            );
+
+          const captureResult =
+            await captureResponse.json();
+
+          if (
+            captureResult.errors?.length
+          ) {
+            console.error(
+              "PAYMENT CAPTURE GRAPHQL ERRORS:",
+              JSON.stringify(
+                captureResult.errors,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment capture failed. Order was not accepted.",
+            };
+          }
+
+          const capturePayload =
+            captureResult.data
+              ?.orderCapture;
+
+          const captureErrors =
+            capturePayload
+              ?.userErrors ||
+            [];
+
+          if (
+            captureErrors.length
+          ) {
+            console.error(
+              "PAYMENT CAPTURE USER ERRORS:",
+              JSON.stringify(
+                captureErrors,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                captureErrors
+                  .map(
+                    (error) =>
+                      error.message,
+                  )
+                  .join(" ") ||
+                "Payment capture failed. Order was not accepted.",
+            };
+          }
+
+          const captureTransaction =
+            capturePayload
+              ?.transaction;
+
+          if (
+            !captureTransaction ||
+            captureTransaction.status !==
+              "SUCCESS"
+          ) {
+            console.error(
+              "PAYMENT CAPTURE NOT SUCCESSFUL:",
+              JSON.stringify(
+                capturePayload,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment was not successfully captured. Order was not accepted.",
+            };
+          }
+
+          console.log(
+            "PAYMENT CAPTURE SUCCESS:",
+            JSON.stringify(
+              captureTransaction,
+            ),
+          );
+        }
+      }
+
+      /*
+      ======================================================
+      PAYMENT SUCCESSFUL / REJECT PATH
+      NOW SAVE RESTAURANT DECISION
+      ======================================================
+      */
+
       await db.orderDecision.upsert({
         where: {
           shopifyOrderId_restaurantId:
@@ -1504,7 +1982,7 @@ export async function action({
       };
     } catch (error) {
       console.error(
-        "ORDER DECISION SAVE FAILED:",
+        "ORDER ACCEPT/REJECT FAILED:",
         error,
       );
 
@@ -1516,7 +1994,10 @@ export async function action({
         orderNumber,
 
         message:
-          "The order decision could not be saved.",
+          intent ===
+          "accept-order"
+            ? "Payment could not be captured. Order was not accepted."
+            : "The order decision could not be saved.",
       };
     }
   }
