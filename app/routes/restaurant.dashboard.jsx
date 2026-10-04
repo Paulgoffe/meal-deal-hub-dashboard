@@ -1016,7 +1016,6 @@ async function getShopifyOrders(
     return [];
   }
 }
-
  export async function loader({
   request,
 }) {
@@ -1369,78 +1368,7 @@ async function getShopifyOrders(
       ordersWithDecisions,
   };
 }
-            order.id,
-          );
-
-        return {
-          ...order,
-
-          status:
-            savedStatus ||
-            order.status,
-        };
-      })
-      .sort(
-        (a, b) =>
-          new Date(
-            b.createdAt,
-          ).getTime() -
-          new Date(
-            a.createdAt,
-          ).getTime(),
-      );
-
-  console.log(
-    "DASHBOARD ORDERS:",
-    JSON.stringify(
-      ordersWithDecisions.map(
-        (order) => ({
-          order:
-            order.orderNumber,
-
-          restaurantId:
-            order.restaurantId,
-
-          status:
-            order.status,
-
-          createdAt:
-            order.createdAt,
-        }),
-      ),
-    ),
-  );
-
-  return {
-    user: {
-      email:
-        user.email,
-
-      firstName:
-        user.firstName,
-
-      lastName:
-        user.lastName,
-    },
-
-    restaurant: {
-      id:
-        user.restaurant.id,
-
-      restaurantId:
-        user.restaurant.restaurantId,
-
-      name:
-        user.restaurant.name,
-
-      acceptingOrders:
-        user.restaurant.acceptingOrders,
-    },
-
-    orders:
-      ordersWithDecisions,
-  };
-}
+  
 
 export async function action({
   request,
