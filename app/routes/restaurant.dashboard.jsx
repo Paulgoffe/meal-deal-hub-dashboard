@@ -1017,7 +1017,6 @@ async function getShopifyOrders(
   }
 }
 
-export async function loader({
  export async function loader({
   request,
 }) {
