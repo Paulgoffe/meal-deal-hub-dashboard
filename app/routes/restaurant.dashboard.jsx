@@ -1925,7 +1925,409 @@ export async function action({
           );
         }
       }
+      /*
+      ======================================================
+      REJECT ORDER - VOID AUTHORIZATION FIRST
+      ======================================================
+      */
 
+      if (
+        intent ===
+        "reject-order"
+      ) {
+        const { admin } =
+          await shopify.unauthenticated.admin(
+            SHOP_DOMAIN,
+          );
+
+        /*
+        ------------------------------------------------------
+        GET ORDER + PAYMENT TRANSACTIONS
+        ------------------------------------------------------
+        */
+
+        const paymentResponse =
+          await admin.graphql(
+            `
+              query MealDealHubRejectPayment(
+                $id: ID!
+              ) {
+                order(id: $id) {
+                  id
+                  name
+                  displayFinancialStatus
+
+                  transactions(first: 20) {
+                    id
+                    kind
+                    status
+                    gateway
+                    test
+
+                    parentTransaction {
+                      id
+                    }
+                  }
+                }
+              }
+            `,
+            {
+              variables: {
+                id:
+                  shopifyOrderId,
+              },
+            },
+          );
+
+        const paymentResult =
+          await paymentResponse.json();
+
+        if (
+          paymentResult.errors?.length
+        ) {
+          console.error(
+            "REJECT PAYMENT LOOKUP GRAPHQL ERRORS:",
+            JSON.stringify(
+              paymentResult.errors,
+            ),
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Payment could not be checked. Order was not rejected.",
+          };
+        }
+
+        const shopifyOrder =
+          paymentResult.data?.order;
+
+        if (!shopifyOrder) {
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Shopify order could not be found. Order was not rejected.",
+          };
+        }
+
+        /*
+        ------------------------------------------------------
+        VERIFY ORDER NUMBER
+        ------------------------------------------------------
+        */
+
+        if (
+          shopifyOrder.name !==
+          orderNumber
+        ) {
+          console.error(
+            "REJECT ORDER NUMBER MISMATCH:",
+            {
+              submitted:
+                orderNumber,
+
+              shopify:
+                shopifyOrder.name,
+
+              shopifyOrderId,
+            },
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "Order verification failed. Order was not rejected.",
+          };
+        }
+
+        /*
+        ------------------------------------------------------
+        IF ALREADY VOIDED, DO NOT VOID AGAIN
+        ------------------------------------------------------
+        */
+
+        const successfulVoid =
+          shopifyOrder.transactions.find(
+            (transaction) =>
+              transaction.kind ===
+                "VOID" &&
+              transaction.status ===
+                "SUCCESS",
+          );
+
+        if (successfulVoid) {
+          console.log(
+            "PAYMENT ALREADY VOIDED:",
+            {
+              shopifyOrderId,
+
+              orderNumber,
+
+              transactionId:
+                successfulVoid.id,
+            },
+          );
+        } else {
+          /*
+          ----------------------------------------------------
+          DO NOT REJECT A PAYMENT THAT HAS ALREADY
+          BEEN CAPTURED
+          ----------------------------------------------------
+          */
+
+          const successfulCapture =
+            shopifyOrder.transactions.find(
+              (transaction) =>
+                transaction.status ===
+                  "SUCCESS" &&
+                (
+                  transaction.kind ===
+                    "CAPTURE" ||
+                  transaction.kind ===
+                    "SALE"
+                ),
+            );
+
+          if (successfulCapture) {
+            console.error(
+              "REJECT BLOCKED - PAYMENT ALREADY CAPTURED:",
+              {
+                shopifyOrderId,
+
+                orderNumber,
+
+                transactionId:
+                  successfulCapture.id,
+              },
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment has already been captured. This order cannot be rejected using the normal reject process.",
+            };
+          }
+
+          /*
+          ----------------------------------------------------
+          FIND SUCCESSFUL AUTHORIZATION
+          ----------------------------------------------------
+          */
+
+          const authorization =
+            shopifyOrder.transactions.find(
+              (transaction) =>
+                transaction.kind ===
+                  "AUTHORIZATION" &&
+                transaction.status ===
+                  "SUCCESS",
+            );
+
+          if (!authorization) {
+            console.error(
+              "REJECT - NO SUCCESSFUL AUTHORIZATION:",
+              {
+                shopifyOrderId,
+
+                orderNumber,
+
+                financialStatus:
+                  shopifyOrder
+                    .displayFinancialStatus,
+              },
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "No payment authorization was found. Order was not rejected.",
+            };
+          }
+
+          console.log(
+            "ATTEMPTING PAYMENT VOID:",
+            {
+              shopifyOrderId,
+
+              orderNumber,
+
+              authorizationId:
+                authorization.id,
+
+              gateway:
+                authorization.gateway,
+
+              test:
+                authorization.test,
+            },
+          );
+
+          /*
+          ----------------------------------------------------
+          VOID AUTHORIZATION
+          ----------------------------------------------------
+          */
+
+          const voidResponse =
+            await admin.graphql(
+              `
+                mutation MealDealHubVoidPayment(
+                  $parentTransactionId: ID!
+                ) {
+                  transactionVoid(
+                    parentTransactionId:
+                      $parentTransactionId
+                  ) {
+                    transaction {
+                      id
+                      kind
+                      status
+                      test
+
+                      parentTransaction {
+                        id
+                      }
+                    }
+
+                    userErrors {
+                      field
+                      message
+                      code
+                    }
+                  }
+                }
+              `,
+              {
+                variables: {
+                  parentTransactionId:
+                    authorization.id,
+                },
+              },
+            );
+
+          const voidResult =
+            await voidResponse.json();
+
+          if (
+            voidResult.errors?.length
+          ) {
+            console.error(
+              "PAYMENT VOID GRAPHQL ERRORS:",
+              JSON.stringify(
+                voidResult.errors,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment authorization could not be released. Order was not rejected.",
+            };
+          }
+
+          const voidPayload =
+            voidResult.data
+              ?.transactionVoid;
+
+          const voidErrors =
+            voidPayload?.userErrors ||
+            [];
+
+          if (
+            voidErrors.length
+          ) {
+            console.error(
+              "PAYMENT VOID USER ERRORS:",
+              JSON.stringify(
+                voidErrors,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                voidErrors
+                  .map(
+                    (error) =>
+                      error.message,
+                  )
+                  .join(" ") ||
+                "Payment authorization could not be released. Order was not rejected.",
+            };
+          }
+
+          const voidTransaction =
+            voidPayload?.transaction;
+
+          if (
+            !voidTransaction ||
+            voidTransaction.kind !==
+              "VOID" ||
+            voidTransaction.status !==
+              "SUCCESS"
+          ) {
+            console.error(
+              "PAYMENT VOID NOT SUCCESSFUL:",
+              JSON.stringify(
+                voidPayload,
+              ),
+            );
+
+            return {
+              success: false,
+
+              shopifyOrderId,
+
+              orderNumber,
+
+              message:
+                "Payment authorization was not successfully released. Order was not rejected.",
+            };
+          }
+
+          console.log(
+            "PAYMENT VOID SUCCESS:",
+            JSON.stringify(
+              voidTransaction,
+            ),
+          );
+        }
+      }
       /*
       ======================================================
       PAYMENT SUCCESSFUL / REJECT PATH
