@@ -1031,6 +1031,78 @@ export async function loader({
     );
   }
 
+  /*
+  =========================================================
+  TEMPORARY SHOPIFY SCOPE CHECK
+  =========================================================
+  */
+
+  try {
+    const { admin } =
+      await shopify.unauthenticated.admin(
+        SHOP_DOMAIN,
+      );
+
+    const scopeResponse =
+      await admin.graphql(
+        `
+          query AccessScopeList {
+            currentAppInstallation {
+              accessScopes {
+                handle
+              }
+            }
+          }
+        `,
+      );
+
+    const scopeResult =
+      await scopeResponse.json();
+
+    const grantedScopes =
+      scopeResult.data
+        ?.currentAppInstallation
+        ?.accessScopes
+        ?.map(
+          (scope) =>
+            scope.handle,
+        ) || [];
+
+    console.log(
+      "SHOPIFY GRANTED SCOPES:",
+      grantedScopes.join(","),
+    );
+
+    console.log(
+      "WRITE_ORDERS GRANTED:",
+      grantedScopes.includes(
+        "write_orders",
+      ),
+    );
+
+    if (
+      scopeResult.errors?.length
+    ) {
+      console.error(
+        "SHOPIFY SCOPE CHECK ERRORS:",
+        JSON.stringify(
+          scopeResult.errors,
+        ),
+      );
+    }
+  } catch (error) {
+    console.error(
+      "SHOPIFY SCOPE CHECK FAILED:",
+      error,
+    );
+  }
+
+  /*
+  =========================================================
+  NORMAL DASHBOARD LOADER
+  =========================================================
+  */
+
   const orders =
     await getShopifyOrders(
       user.restaurant.restaurantId,

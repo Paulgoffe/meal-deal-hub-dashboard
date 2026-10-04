@@ -20,8 +20,8 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_orders,read_customers,read_merchant_managed_fulfillment_orders,write_metaobject_definitions,write_metaobjects,write_products"
+# write_orders includes the order access needed for payment capture/void
+scopes = "write_orders,read_customers,read_merchant_managed_fulfillment_orders,write_metaobject_definitions,write_metaobjects,write_products"
 
 [auth]
 redirect_urls = [
