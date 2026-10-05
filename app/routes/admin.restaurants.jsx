@@ -141,6 +141,168 @@ export async function action({
   const formData =
     await request.formData();
 
+  const intent =
+    String(
+      formData.get("intent") ||
+        "create-restaurant",
+    );
+
+  /*
+  ======================================================
+  DEACTIVATE RESTAURANT
+  ======================================================
+  */
+
+  if (
+    intent ===
+    "deactivate-restaurant"
+  ) {
+    const restaurantDbId =
+      Number(
+        formData.get(
+          "restaurantDbId",
+        ),
+      );
+
+    if (
+      !Number.isInteger(
+        restaurantDbId,
+      ) ||
+      restaurantDbId <= 0
+    ) {
+      return {
+        error:
+          "Restaurant information is missing.",
+      };
+    }
+
+    const restaurant =
+      await db.restaurant.findUnique({
+        where: {
+          id: restaurantDbId,
+        },
+      });
+
+    if (!restaurant) {
+      return {
+        error:
+          "Restaurant could not be found.",
+      };
+    }
+
+    await db.$transaction([
+      db.restaurant.update({
+        where: {
+          id: restaurantDbId,
+        },
+
+        data: {
+          active: false,
+          acceptingOrders: false,
+        },
+      }),
+
+      db.restaurantUser.updateMany({
+        where: {
+          restaurantId:
+            restaurantDbId,
+        },
+
+        data: {
+          active: false,
+        },
+      }),
+    ]);
+
+    return {
+      managementSuccess: true,
+
+      message:
+        `${restaurant.name} has been deactivated.`,
+    };
+  }
+
+  /*
+  ======================================================
+  REACTIVATE RESTAURANT
+  ======================================================
+  */
+
+  if (
+    intent ===
+    "reactivate-restaurant"
+  ) {
+    const restaurantDbId =
+      Number(
+        formData.get(
+          "restaurantDbId",
+        ),
+      );
+
+    if (
+      !Number.isInteger(
+        restaurantDbId,
+      ) ||
+      restaurantDbId <= 0
+    ) {
+      return {
+        error:
+          "Restaurant information is missing.",
+      };
+    }
+
+    const restaurant =
+      await db.restaurant.findUnique({
+        where: {
+          id: restaurantDbId,
+        },
+      });
+
+    if (!restaurant) {
+      return {
+        error:
+          "Restaurant could not be found.",
+      };
+    }
+
+    await db.$transaction([
+      db.restaurant.update({
+        where: {
+          id: restaurantDbId,
+        },
+
+        data: {
+          active: true,
+          acceptingOrders: true,
+        },
+      }),
+
+      db.restaurantUser.updateMany({
+        where: {
+          restaurantId:
+            restaurantDbId,
+        },
+
+        data: {
+          active: true,
+        },
+      }),
+    ]);
+
+    return {
+      managementSuccess: true,
+
+      message:
+        `${restaurant.name} has been reactivated.`,
+    };
+  }
+
+  /*
+  ======================================================
+  CREATE RESTAURANT
+  ======================================================
+  */
+
   const name = String(
     formData.get("name") || "",
   ).trim();
@@ -248,11 +410,15 @@ export async function action({
 
   return {
     success: true,
+
     restaurantName:
       restaurant.name,
+
     restaurantId:
       restaurant.restaurantId,
+
     email,
+
     activationLink,
   };
 }
@@ -286,6 +452,16 @@ export default function AdminRestaurants() {
         {actionData?.error && (
           <div style={styles.error}>
             {actionData.error}
+          </div>
+        )}
+
+        {actionData?.managementSuccess && (
+          <div
+            style={
+              styles.managementSuccess
+            }
+          >
+            ✓ {actionData.message}
           </div>
         )}
 
@@ -352,9 +528,13 @@ export default function AdminRestaurants() {
           </h2>
 
           <Form method="post">
-            <label
-              style={styles.label}
-            >
+            <input
+              type="hidden"
+              name="intent"
+              value="create-restaurant"
+            />
+
+            <label style={styles.label}>
               Restaurant name
             </label>
 
@@ -366,9 +546,7 @@ export default function AdminRestaurants() {
               style={styles.input}
             />
 
-            <label
-              style={styles.label}
-            >
+            <label style={styles.label}>
               Restaurant ID
             </label>
 
@@ -380,9 +558,7 @@ export default function AdminRestaurants() {
               style={styles.input}
             />
 
-            <label
-              style={styles.label}
-            >
+            <label style={styles.label}>
               Restaurant email
             </label>
 
@@ -399,8 +575,7 @@ export default function AdminRestaurants() {
               type="submit"
               style={styles.button}
             >
-              CREATE RESTAURANT
-              ACCOUNT
+              CREATE RESTAURANT ACCOUNT
             </button>
           </Form>
         </section>
@@ -415,31 +590,26 @@ export default function AdminRestaurants() {
               styles.restaurantHeader
             }
           >
-            <div>
-              <h2
-                style={
-                  styles.sectionTitle
-                }
-              >
-                Existing Restaurants
-              </h2>
+            <h2
+              style={
+                styles.sectionTitle
+              }
+            >
+              Existing Restaurants
+            </h2>
 
-              <p
-                style={
-                  styles.sectionIntro
-                }
-              >
-                {
-                  restaurants.length
-                }{" "}
-                restaurant
-                {restaurants.length ===
-                1
-                  ? ""
-                  : "s"}{" "}
-                registered.
-              </p>
-            </div>
+            <p
+              style={
+                styles.sectionIntro
+              }
+            >
+              {restaurants.length}{" "}
+              restaurant
+              {restaurants.length === 1
+                ? ""
+                : "s"}{" "}
+              registered.
+            </p>
           </div>
 
           {restaurants.length === 0 ? (
@@ -584,6 +754,63 @@ export default function AdminRestaurants() {
                           </span>
                         </div>
                       </div>
+
+                      <div
+                        style={
+                          styles.actions
+                        }
+                      >
+                        <Form
+                          method="post"
+                          onSubmit={(
+                            event,
+                          ) => {
+                            const message =
+                              restaurant.active
+                                ? `Deactivate ${restaurant.name}? They will no longer be able to receive orders or access their restaurant account.`
+                                : `Reactivate ${restaurant.name}? Their restaurant account and ordering access will be restored.`;
+
+                            if (
+                              !window.confirm(
+                                message,
+                              )
+                            ) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          <input
+                            type="hidden"
+                            name="restaurantDbId"
+                            value={
+                              restaurant.id
+                            }
+                          />
+
+                          <input
+                            type="hidden"
+                            name="intent"
+                            value={
+                              restaurant.active
+                                ? "deactivate-restaurant"
+                                : "reactivate-restaurant"
+                            }
+                          />
+
+                          <button
+                            type="submit"
+                            style={
+                              restaurant.active
+                                ? styles.deactivateButton
+                                : styles.reactivateButton
+                            }
+                          >
+                            {restaurant.active
+                              ? "DEACTIVATE RESTAURANT"
+                              : "REACTIVATE RESTAURANT"}
+                          </button>
+                        </Form>
+                      </div>
                     </div>
                   );
                 },
@@ -593,12 +820,11 @@ export default function AdminRestaurants() {
         </section>
 
         <div style={styles.security}>
-          🔒 Restaurant accounts are
-          automatically linked to the
-          Restaurant ID entered above.
-          Restaurants cannot select or
-          change their Restaurant ID
-          when signing in.
+          🔒 Deactivating a restaurant
+          does not delete its previous
+          orders or payout history. The
+          restaurant can be reactivated
+          later.
         </div>
       </div>
     </main>
@@ -707,7 +933,7 @@ const styles = {
 
   restaurantCardInactive: {
     background: "#f8f8f8",
-    opacity: 0.8,
+    opacity: 0.85,
   },
 
   restaurantTop: {
@@ -772,6 +998,38 @@ const styles = {
     marginBottom: 4,
   },
 
+  actions: {
+    borderTop: "1px solid #eee",
+    marginTop: 20,
+    paddingTop: 18,
+  },
+
+  deactivateButton: {
+    width: "100%",
+    background: "#ffffff",
+    color: "#b42318",
+    border:
+      "2px solid #b42318",
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  reactivateButton: {
+    width: "100%",
+    background: "#137333",
+    color: "#ffffff",
+    border:
+      "2px solid #137333",
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
   empty: {
     background: "#ffffff",
     border: "1px solid #ddd",
@@ -798,6 +1056,17 @@ const styles = {
     borderRadius: 16,
     padding: 24,
     marginBottom: 20,
+  },
+
+  managementSuccess: {
+    background: "#e7f6ec",
+    border:
+      "1px solid #a9d9b8",
+    color: "#137333",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 20,
+    fontWeight: 700,
   },
 
   successTitle: {
