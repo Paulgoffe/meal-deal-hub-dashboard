@@ -17,91 +17,181 @@ function getAdminSecret() {
 }
 
 function verifyAdminSession(request) {
-  const cookieHeader = request.headers.get("Cookie") || "";
+  const cookieHeader =
+    request.headers.get("Cookie") || "";
 
   const cookies = Object.fromEntries(
     cookieHeader
       .split(";")
-      .map((cookie) => cookie.trim())
+      .map((cookie) =>
+        cookie.trim(),
+      )
       .filter(Boolean)
       .map((cookie) => {
-        const index = cookie.indexOf("=");
+        const index =
+          cookie.indexOf("=");
 
         if (index === -1) {
-          return [cookie, ""];
+          return [
+            cookie,
+            "",
+          ];
         }
 
         return [
-          cookie.slice(0, index),
-          cookie.slice(index + 1),
+          cookie.slice(
+            0,
+            index,
+          ),
+
+          cookie.slice(
+            index + 1,
+          ),
         ];
       }),
   );
 
-  const session = cookies[ADMIN_COOKIE];
+  const session =
+    cookies[ADMIN_COOKIE];
 
   if (!session) {
     return false;
   }
 
-  const separator = session.lastIndexOf(".");
+  const separator =
+    session.lastIndexOf(".");
 
   if (separator === -1) {
     return false;
   }
 
-  const value = session.slice(0, separator);
-  const signature = session.slice(separator + 1);
+  const value =
+    session.slice(
+      0,
+      separator,
+    );
 
-  const expectedSignature = crypto
-    .createHmac("sha256", getAdminSecret())
-    .update(value)
-    .digest("hex");
+  const signature =
+    session.slice(
+      separator + 1,
+    );
 
-  if (signature.length !== expectedSignature.length) {
+  const expectedSignature =
+    crypto
+      .createHmac(
+        "sha256",
+        getAdminSecret(),
+      )
+      .update(value)
+      .digest("hex");
+
+  if (
+    signature.length !==
+    expectedSignature.length
+  ) {
     return false;
   }
 
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature),
+      Buffer.from(
+        signature,
+      ),
+
+      Buffer.from(
+        expectedSignature,
+      ),
     );
   } catch {
     return false;
   }
 }
 
-export async function loader({ request }) {
-  if (!verifyAdminSession(request)) {
-    throw redirect("/admin/login");
+export async function loader({
+  request,
+}) {
+  if (
+    !verifyAdminSession(
+      request,
+    )
+  ) {
+    throw redirect(
+      "/admin/login",
+    );
   }
 
-  return null;
+  const restaurants =
+    await db.restaurant.findMany({
+      orderBy: {
+        name: "asc",
+      },
+
+      include: {
+        users: {
+          select: {
+            id: true,
+            email: true,
+            active: true,
+            activated: true,
+          },
+        },
+
+        _count: {
+          select: {
+            orderDecisions: true,
+            payouts: true,
+          },
+        },
+      },
+    });
+
+  return {
+    restaurants,
+  };
 }
 
-export async function action({ request }) {
-  if (!verifyAdminSession(request)) {
-    throw redirect("/admin/login");
+export async function action({
+  request,
+}) {
+  if (
+    !verifyAdminSession(
+      request,
+    )
+  ) {
+    throw redirect(
+      "/admin/login",
+    );
   }
 
-  const formData = await request.formData();
+  const formData =
+    await request.formData();
 
-  const name = String(
-    formData.get("name") || "",
-  ).trim();
+  const name =
+    String(
+      formData.get("name") ||
+        "",
+    ).trim();
 
-  const restaurantId = String(
-    formData.get("restaurantId") || "",
-  ).trim();
+  const restaurantId =
+    String(
+      formData.get(
+        "restaurantId",
+      ) || "",
+    ).trim();
 
-  const email = String(
-    formData.get("email") || "",
-  )
-    .trim()
-    .toLowerCase();
+  const email =
+    String(
+      formData.get("email") ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
 
-  if (!name || !restaurantId || !email) {
+  if (
+    !name ||
+    !restaurantId ||
+    !email
+  ) {
     return {
       error:
         "Please enter the restaurant name, Restaurant ID and email address.",
@@ -117,7 +207,8 @@ export async function action({ request }) {
 
   if (existingRestaurant) {
     return {
-      error: `Restaurant ID "${restaurantId}" is already in use.`,
+      error:
+        `Restaurant ID "${restaurantId}" is already in use.`,
     };
   }
 
@@ -135,18 +226,25 @@ export async function action({ request }) {
     };
   }
 
-  const activationToken = crypto
-    .randomBytes(32)
-    .toString("hex");
+  const activationToken =
+    crypto
+      .randomBytes(32)
+      .toString("hex");
 
-  const activationExpiry = new Date(
-    Date.now() +
-      ACTIVATION_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const activationExpiry =
+    new Date(
+      Date.now() +
+        ACTIVATION_DAYS *
+          24 *
+          60 *
+          60 *
+          1000,
+    );
 
-  const temporaryPasswordHash = crypto
-    .randomBytes(48)
-    .toString("hex");
+  const temporaryPasswordHash =
+    crypto
+      .randomBytes(48)
+      .toString("hex");
 
   const restaurant =
     await db.restaurant.create({
@@ -159,7 +257,8 @@ export async function action({ request }) {
         users: {
           create: {
             email,
-            passwordHash: temporaryPasswordHash,
+            passwordHash:
+              temporaryPasswordHash,
             active: true,
             activated: false,
             activationToken,
@@ -173,22 +272,32 @@ export async function action({ request }) {
       },
     });
 
-  const url = new URL(request.url);
+  const url =
+    new URL(
+      request.url,
+    );
 
   const activationLink =
     `${url.origin}/restaurant/activate?token=${activationToken}`;
 
   return {
     success: true,
-    restaurantName: restaurant.name,
-    restaurantId: restaurant.restaurantId,
+
+    restaurantName:
+      restaurant.name,
+
+    restaurantId:
+      restaurant.restaurantId,
+
     email,
+
     activationLink,
   };
 }
 
 export default function AdminRestaurants() {
-  const actionData = useActionData();
+  const actionData =
+    useActionData();
 
   return (
     <main style={styles.page}>
@@ -202,7 +311,8 @@ export default function AdminRestaurants() {
         </h1>
 
         <p style={styles.intro}>
-          Create a Meal Deal Hub account for a restaurant
+          Create a Meal Deal Hub
+          account for a restaurant
           location.
         </p>
 
@@ -214,35 +324,56 @@ export default function AdminRestaurants() {
 
         {actionData?.success && (
           <div style={styles.success}>
-            <div style={styles.successTitle}>
-              ✓ Restaurant account created
+            <div
+              style={
+                styles.successTitle
+              }
+            >
+              ✓ Restaurant account
+              created
             </div>
 
             <div style={styles.details}>
               <strong>
-                {actionData.restaurantName}
+                {
+                  actionData.restaurantName
+                }
               </strong>
 
               <div>
                 Restaurant ID:{" "}
-                {actionData.restaurantId}
+                {
+                  actionData.restaurantId
+                }
               </div>
 
               <div>
-                Email: {actionData.email}
+                Email:{" "}
+                {actionData.email}
               </div>
             </div>
 
-            <div style={styles.linkLabel}>
+            <div
+              style={
+                styles.linkLabel
+              }
+            >
               ACTIVATION LINK
             </div>
 
-            <div style={styles.activationLink}>
-              {actionData.activationLink}
+            <div
+              style={
+                styles.activationLink
+              }
+            >
+              {
+                actionData.activationLink
+              }
             </div>
 
             <p style={styles.note}>
-              Send this link to the restaurant. It expires
+              Send this link to the
+              restaurant. It expires
               after 7 days.
             </p>
           </div>
@@ -250,7 +381,9 @@ export default function AdminRestaurants() {
 
         <section style={styles.card}>
           <Form method="post">
-            <label style={styles.label}>
+            <label
+              style={styles.label}
+            >
               Restaurant name
             </label>
 
@@ -262,7 +395,9 @@ export default function AdminRestaurants() {
               style={styles.input}
             />
 
-            <label style={styles.label}>
+            <label
+              style={styles.label}
+            >
               Restaurant ID
             </label>
 
@@ -274,7 +409,9 @@ export default function AdminRestaurants() {
               style={styles.input}
             />
 
-            <label style={styles.label}>
+            <label
+              style={styles.label}
+            >
               Restaurant email
             </label>
 
@@ -291,16 +428,19 @@ export default function AdminRestaurants() {
               type="submit"
               style={styles.button}
             >
-              CREATE RESTAURANT ACCOUNT
+              CREATE RESTAURANT
+              ACCOUNT
             </button>
           </Form>
         </section>
 
         <div style={styles.security}>
-          🔒 Restaurant accounts are automatically linked
-          to the Restaurant ID entered above. Restaurants
-          cannot select or change their Restaurant ID when
-          signing in.
+          🔒 Restaurant accounts are
+          automatically linked to the
+          Restaurant ID entered above.
+          Restaurants cannot select or
+          change their Restaurant ID
+          when signing in.
         </div>
       </div>
     </main>
@@ -311,7 +451,8 @@ const styles = {
   page: {
     minHeight: "100vh",
     background: "#f4f4f4",
-    fontFamily: "Arial, Helvetica, sans-serif",
+    fontFamily:
+      "Arial, Helvetica, sans-serif",
     padding: 24,
     color: "#171717",
   },
@@ -377,7 +518,8 @@ const styles = {
 
   error: {
     background: "#fff0f0",
-    border: "1px solid #d72c0d",
+    border:
+      "1px solid #d72c0d",
     color: "#8e1f0b",
     padding: 14,
     borderRadius: 10,
@@ -386,7 +528,8 @@ const styles = {
 
   success: {
     background: "#ffffff",
-    border: "2px solid #137333",
+    border:
+      "2px solid #137333",
     borderRadius: 16,
     padding: 24,
     marginBottom: 20,
