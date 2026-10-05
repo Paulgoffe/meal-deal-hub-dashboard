@@ -2,6 +2,7 @@ import {
   Form,
   redirect,
   useActionData,
+  useLoaderData,
 } from "react-router";
 import crypto from "node:crypto";
 import db from "../db.server";
@@ -23,30 +24,18 @@ function verifyAdminSession(request) {
   const cookies = Object.fromEntries(
     cookieHeader
       .split(";")
-      .map((cookie) =>
-        cookie.trim(),
-      )
+      .map((cookie) => cookie.trim())
       .filter(Boolean)
       .map((cookie) => {
-        const index =
-          cookie.indexOf("=");
+        const index = cookie.indexOf("=");
 
         if (index === -1) {
-          return [
-            cookie,
-            "",
-          ];
+          return [cookie, ""];
         }
 
         return [
-          cookie.slice(
-            0,
-            index,
-          ),
-
-          cookie.slice(
-            index + 1,
-          ),
+          cookie.slice(0, index),
+          cookie.slice(index + 1),
         ];
       }),
   );
@@ -66,15 +55,10 @@ function verifyAdminSession(request) {
   }
 
   const value =
-    session.slice(
-      0,
-      separator,
-    );
+    session.slice(0, separator);
 
   const signature =
-    session.slice(
-      separator + 1,
-    );
+    session.slice(separator + 1);
 
   const expectedSignature =
     crypto
@@ -94,13 +78,8 @@ function verifyAdminSession(request) {
 
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(
-        signature,
-      ),
-
-      Buffer.from(
-        expectedSignature,
-      ),
+      Buffer.from(signature),
+      Buffer.from(expectedSignature),
     );
   } catch {
     return false;
@@ -111,9 +90,7 @@ export async function loader({
   request,
 }) {
   if (
-    !verifyAdminSession(
-      request,
-    )
+    !verifyAdminSession(request)
   ) {
     throw redirect(
       "/admin/login",
@@ -154,9 +131,7 @@ export async function action({
   request,
 }) {
   if (
-    !verifyAdminSession(
-      request,
-    )
+    !verifyAdminSession(request)
   ) {
     throw redirect(
       "/admin/login",
@@ -166,26 +141,19 @@ export async function action({
   const formData =
     await request.formData();
 
-  const name =
-    String(
-      formData.get("name") ||
-        "",
-    ).trim();
+  const name = String(
+    formData.get("name") || "",
+  ).trim();
 
-  const restaurantId =
-    String(
-      formData.get(
-        "restaurantId",
-      ) || "",
-    ).trim();
+  const restaurantId = String(
+    formData.get("restaurantId") || "",
+  ).trim();
 
-  const email =
-    String(
-      formData.get("email") ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
+  const email = String(
+    formData.get("email") || "",
+  )
+    .trim()
+    .toLowerCase();
 
   if (
     !name ||
@@ -273,24 +241,18 @@ export async function action({
     });
 
   const url =
-    new URL(
-      request.url,
-    );
+    new URL(request.url);
 
   const activationLink =
     `${url.origin}/restaurant/activate?token=${activationToken}`;
 
   return {
     success: true,
-
     restaurantName:
       restaurant.name,
-
     restaurantId:
       restaurant.restaurantId,
-
     email,
-
     activationLink,
   };
 }
@@ -298,6 +260,12 @@ export async function action({
 export default function AdminRestaurants() {
   const actionData =
     useActionData();
+
+  const loaderData =
+    useLoaderData();
+
+  const restaurants =
+    loaderData?.restaurants || [];
 
   return (
     <main style={styles.page}>
@@ -307,13 +275,12 @@ export default function AdminRestaurants() {
         </div>
 
         <h1 style={styles.heading}>
-          Add Restaurant
+          Restaurant Management
         </h1>
 
         <p style={styles.intro}>
-          Create a Meal Deal Hub
-          account for a restaurant
-          location.
+          Create and manage Meal Deal Hub
+          restaurant accounts.
         </p>
 
         {actionData?.error && (
@@ -380,6 +347,10 @@ export default function AdminRestaurants() {
         )}
 
         <section style={styles.card}>
+          <h2 style={styles.sectionTitle}>
+            Add Restaurant
+          </h2>
+
           <Form method="post">
             <label
               style={styles.label}
@@ -434,6 +405,193 @@ export default function AdminRestaurants() {
           </Form>
         </section>
 
+        <section
+          style={
+            styles.restaurantSection
+          }
+        >
+          <div
+            style={
+              styles.restaurantHeader
+            }
+          >
+            <div>
+              <h2
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Existing Restaurants
+              </h2>
+
+              <p
+                style={
+                  styles.sectionIntro
+                }
+              >
+                {
+                  restaurants.length
+                }{" "}
+                restaurant
+                {restaurants.length ===
+                1
+                  ? ""
+                  : "s"}{" "}
+                registered.
+              </p>
+            </div>
+          </div>
+
+          {restaurants.length === 0 ? (
+            <div style={styles.empty}>
+              No restaurants have been
+              created yet.
+            </div>
+          ) : (
+            <div
+              style={
+                styles.restaurantList
+              }
+            >
+              {restaurants.map(
+                (restaurant) => {
+                  const primaryUser =
+                    restaurant
+                      .users?.[0];
+
+                  return (
+                    <div
+                      key={
+                        restaurant.id
+                      }
+                      style={
+                        restaurant.active
+                          ? styles.restaurantCard
+                          : {
+                              ...styles.restaurantCard,
+                              ...styles.restaurantCardInactive,
+                            }
+                      }
+                    >
+                      <div
+                        style={
+                          styles.restaurantTop
+                        }
+                      >
+                        <div>
+                          <div
+                            style={
+                              styles.restaurantName
+                            }
+                          >
+                            {
+                              restaurant.name
+                            }
+                          </div>
+
+                          <div
+                            style={
+                              styles.restaurantId
+                            }
+                          >
+                            ID:{" "}
+                            {
+                              restaurant.restaurantId
+                            }
+                          </div>
+                        </div>
+
+                        <div
+                          style={
+                            restaurant.active
+                              ? styles.activeBadge
+                              : styles.inactiveBadge
+                          }
+                        >
+                          {restaurant.active
+                            ? "ACTIVE"
+                            : "DEACTIVATED"}
+                        </div>
+                      </div>
+
+                      <div
+                        style={
+                          styles.restaurantDetails
+                        }
+                      >
+                        <div>
+                          <span
+                            style={
+                              styles.detailLabel
+                            }
+                          >
+                            Email
+                          </span>
+
+                          <span>
+                            {primaryUser?.email ||
+                              "No email"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span
+                            style={
+                              styles.detailLabel
+                            }
+                          >
+                            Account
+                          </span>
+
+                          <span>
+                            {primaryUser?.activated
+                              ? "Activated"
+                              : "Not activated"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span
+                            style={
+                              styles.detailLabel
+                            }
+                          >
+                            Orders
+                          </span>
+
+                          <span>
+                            {
+                              restaurant
+                                ._count
+                                .orderDecisions
+                            }
+                          </span>
+                        </div>
+
+                        <div>
+                          <span
+                            style={
+                              styles.detailLabel
+                            }
+                          >
+                            Accepting orders
+                          </span>
+
+                          <span>
+                            {restaurant.acceptingOrders
+                              ? "Yes"
+                              : "No"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          )}
+        </section>
+
         <div style={styles.security}>
           🔒 Restaurant accounts are
           automatically linked to the
@@ -459,7 +617,7 @@ const styles = {
 
   container: {
     width: "100%",
-    maxWidth: 650,
+    maxWidth: 760,
     margin: "30px auto",
   },
 
@@ -479,6 +637,17 @@ const styles = {
   intro: {
     color: "#666",
     margin: "0 0 25px",
+  },
+
+  sectionTitle: {
+    fontSize: 22,
+    margin: "0 0 8px",
+  },
+
+  sectionIntro: {
+    color: "#666",
+    fontSize: 14,
+    margin: 0,
   },
 
   card: {
@@ -514,6 +683,102 @@ const styles = {
     fontSize: 16,
     fontWeight: 900,
     cursor: "pointer",
+  },
+
+  restaurantSection: {
+    marginTop: 28,
+  },
+
+  restaurantHeader: {
+    marginBottom: 14,
+  },
+
+  restaurantList: {
+    display: "grid",
+    gap: 14,
+  },
+
+  restaurantCard: {
+    background: "#ffffff",
+    border: "1px solid #ddd",
+    borderRadius: 14,
+    padding: 20,
+  },
+
+  restaurantCardInactive: {
+    background: "#f8f8f8",
+    opacity: 0.8,
+  },
+
+  restaurantTop: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems: "flex-start",
+    gap: 15,
+    marginBottom: 18,
+  },
+
+  restaurantName: {
+    fontSize: 19,
+    fontWeight: 900,
+    marginBottom: 5,
+  },
+
+  restaurantId: {
+    color: "#666",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+
+  activeBadge: {
+    background: "#e7f6ec",
+    color: "#137333",
+    border:
+      "1px solid #a9d9b8",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
+  inactiveBadge: {
+    background: "#f2f2f2",
+    color: "#666",
+    border:
+      "1px solid #ccc",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
+  restaurantDetails: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 14,
+    fontSize: 14,
+  },
+
+  detailLabel: {
+    display: "block",
+    color: "#777",
+    fontSize: 11,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+
+  empty: {
+    background: "#ffffff",
+    border: "1px solid #ddd",
+    borderRadius: 14,
+    padding: 24,
+    color: "#666",
+    textAlign: "center",
   },
 
   error: {
