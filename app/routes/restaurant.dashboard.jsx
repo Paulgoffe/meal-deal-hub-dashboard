@@ -1482,17 +1482,14 @@ export async function action({
         if (
           !restaurantOwnsOrder
         ) {
-          console.error(
+                console.error(
             "PAYMENT SECURITY - RESTAURANT DOES NOT OWN ORDER:",
-            {
+            JSON.stringify({
               shopifyOrderId,
-
               orderNumber,
-
               loggedInRestaurantId,
-
               orderRestaurantIds,
-            },
+            }),
           );
 
           return {
