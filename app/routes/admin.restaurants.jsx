@@ -149,6 +149,31 @@ export async function action({
 
   /*
   ======================================================
+  ADMIN LOGOUT
+  ======================================================
+  */
+
+  if (intent === "logout") {
+    throw redirect("/admin/login", {
+      headers: {
+        "Set-Cookie": [
+          `${ADMIN_COOKIE}=`,
+          "Path=/",
+          "HttpOnly",
+          "SameSite=Lax",
+          "Max-Age=0",
+          process.env.NODE_ENV === "production"
+            ? "Secure"
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; "),
+      },
+    });
+  }
+
+  /*
+  ======================================================
   DEACTIVATE RESTAURANT
   ======================================================
   */
@@ -436,8 +461,26 @@ export default function AdminRestaurants() {
   return (
     <main style={styles.page}>
       <div style={styles.container}>
-        <div style={styles.brand}>
-          MEAL DEAL HUB
+
+        <div style={styles.topBar}>
+          <div style={styles.brand}>
+            MEAL DEAL HUB
+          </div>
+
+          <Form method="post">
+            <input
+              type="hidden"
+              name="intent"
+              value="logout"
+            />
+
+            <button
+              type="submit"
+              style={styles.logoutButton}
+            >
+              LOG OUT
+            </button>
+          </Form>
         </div>
 
         <h1 style={styles.heading}>
@@ -847,12 +890,30 @@ const styles = {
     margin: "30px auto",
   },
 
+  topBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 20,
+    marginBottom: 8,
+  },
+
   brand: {
     color: "#f05a28",
     fontSize: 15,
     fontWeight: 900,
     letterSpacing: 1,
-    marginBottom: 8,
+  },
+
+  logoutButton: {
+    background: "#171717",
+    color: "#ffffff",
+    border: 0,
+    borderRadius: 8,
+    padding: "10px 16px",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
   },
 
   heading: {
