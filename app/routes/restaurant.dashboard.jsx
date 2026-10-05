@@ -1430,7 +1430,94 @@ export async function action({
               "Order verification failed. Order was not accepted.",
           };
         }
+        /*
+        ------------------------------------------------------
+        RESTAURANT OWNERSHIP SECURITY CHECK
 
+        Only the restaurant whose _Restaurant ID is attached
+        to the food items can accept and capture this order.
+        ------------------------------------------------------
+        */
+
+        const loggedInRestaurantId =
+          normaliseText(
+            user.restaurant
+              .restaurantId,
+          );
+
+        const orderRestaurantIds =
+          (
+            shopifyOrder
+              .lineItems
+              ?.nodes || []
+          )
+            .flatMap(
+              (item) =>
+                item.customAttributes ||
+                [],
+            )
+            .filter(
+              (attribute) =>
+                attribute.key ===
+                "_Restaurant ID",
+            )
+            .map(
+              (attribute) =>
+                normaliseText(
+                  attribute.value,
+                ),
+            )
+            .filter(Boolean);
+
+        const restaurantOwnsOrder =
+          loggedInRestaurantId &&
+          orderRestaurantIds.length >
+            0 &&
+          orderRestaurantIds.every(
+            (restaurantId) =>
+              restaurantId ===
+              loggedInRestaurantId,
+          );
+
+        if (
+          !restaurantOwnsOrder
+        ) {
+          console.error(
+            "PAYMENT SECURITY - RESTAURANT DOES NOT OWN ORDER:",
+            {
+              shopifyOrderId,
+
+              orderNumber,
+
+              loggedInRestaurantId,
+
+              orderRestaurantIds,
+            },
+          );
+
+          return {
+            success: false,
+
+            shopifyOrderId,
+
+            orderNumber,
+
+            message:
+              "This order does not belong to this restaurant. Payment was not captured.",
+          };
+        }
+
+        console.log(
+          "PAYMENT SECURITY - RESTAURANT OWNERSHIP VERIFIED:",
+          {
+            shopifyOrderId,
+
+            orderNumber,
+
+            restaurantId:
+              loggedInRestaurantId,
+          },
+        );
         /*
         ------------------------------------------------------
         IDEMPOTENCY CHECK
