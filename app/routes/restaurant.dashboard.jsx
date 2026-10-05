@@ -1507,14 +1507,6 @@ console.log(
       user.restaurant.restaurantId,
   },
 );
-            shopifyOrderId,
-
-            orderNumber,
-
-            restaurantId:
-              loggedInRestaurantId,
-          },
-        );
         /*
         ------------------------------------------------------
         IDEMPOTENCY CHECK
