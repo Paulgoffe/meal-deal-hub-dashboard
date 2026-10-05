@@ -1416,7 +1416,7 @@ export async function action({
                 shopifyOrder.name,
 
               shopifyOrderId,
-            },
+            },$
           );
 
           return {
@@ -1430,83 +1430,83 @@ export async function action({
               "Order verification failed. Order was not accepted.",
           };
         }
-        /*
-        ------------------------------------------------------
-        RESTAURANT OWNERSHIP SECURITY CHECK
+      /*
+------------------------------------------------------
+RESTAURANT OWNERSHIP SECURITY CHECK
+------------------------------------------------------
 
-        Only the restaurant whose _Restaurant ID is attached
-        to the food items can accept and capture this order.
-        ------------------------------------------------------
-        */
+The order has already been filtered by getShopifyOrders()
+for the logged-in restaurant before it is displayed on
+the restaurant dashboard.
 
-        const loggedInRestaurantId =
-          normaliseText(
-            user.restaurant
-              .restaurantId,
-          );
+Verify that this exact Shopify order is present in the
+logged-in restaurant's order list before allowing the
+payment action.
+------------------------------------------------------
+*/
 
-        const orderRestaurantIds =
-          (
-            shopifyOrder
-              .lineItems
-              ?.nodes || []
-          )
-            .flatMap(
-              (item) =>
-                item.customAttributes ||
-                [],
-            )
-            .filter(
-              (attribute) =>
-                attribute.key ===
-                "_Restaurant ID",
-            )
-            .map(
-              (attribute) =>
-                normaliseText(
-                  attribute.value,
-                ),
-            )
-            .filter(Boolean);
+const restaurantOrders =
+  await getShopifyOrders(
+    user.restaurant.restaurantId,
+    user.restaurant.name,
+  );
 
-        const restaurantOwnsOrder =
-          loggedInRestaurantId &&
-          orderRestaurantIds.length >
-            0 &&
-          orderRestaurantIds.every(
-            (restaurantId) =>
-              restaurantId ===
-              loggedInRestaurantId,
-          );
+const restaurantOwnsOrder =
+  restaurantOrders.some(
+    (restaurantOrder) =>
+      restaurantOrder.id ===
+      shopifyOrderId,
+  );
 
-        if (
-          !restaurantOwnsOrder
-        ) {
-                console.error(
-            "PAYMENT SECURITY - RESTAURANT DOES NOT OWN ORDER:",
-            JSON.stringify({
-              shopifyOrderId,
-              orderNumber,
-              loggedInRestaurantId,
-              orderRestaurantIds,
-            }),
-          );
+console.log(
+  "PAYMENT SECURITY - OWNERSHIP CHECK:",
+  {
+    shopifyOrderId,
+    orderNumber,
 
-          return {
-            success: false,
+    restaurantId:
+      user.restaurant.restaurantId,
 
-            shopifyOrderId,
+    restaurantName:
+      user.restaurant.name,
 
-            orderNumber,
+    restaurantOwnsOrder,
+  },
+);
 
-            message:
-              "This order does not belong to this restaurant. Payment was not captured.",
-          };
-        }
+if (!restaurantOwnsOrder) {
+  console.error(
+    "PAYMENT SECURITY - RESTAURANT DOES NOT OWN ORDER:",
+    {
+      shopifyOrderId,
+      orderNumber,
 
-        console.log(
-          "PAYMENT SECURITY - RESTAURANT OWNERSHIP VERIFIED:",
-          {
+      restaurantId:
+        user.restaurant.restaurantId,
+    },
+  );
+
+  return {
+    success: false,
+
+    shopifyOrderId,
+    orderNumber,
+
+    message:
+      "This order does not belong to this restaurant. Payment was not captured.",
+  };
+}
+
+console.log(
+  "PAYMENT SECURITY - RESTAURANT OWNERSHIP VERIFIED:",
+  {
+    shopifyOrderId,
+    orderNumber,
+
+    restaurantId:
+      user.restaurant.restaurantId,
+  },
+);
             shopifyOrderId,
 
             orderNumber,
