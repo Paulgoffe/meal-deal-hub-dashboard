@@ -1290,6 +1290,15 @@ export async function action({
                   name
                   displayFinancialStatus
 
+                                    lineItems(first: 100) {
+                    nodes {
+                      customAttributes {
+                        key
+                        value
+                      }
+                    }
+                  }
+
                   currentTotalPriceSet {
                     shopMoney {
                       amount
