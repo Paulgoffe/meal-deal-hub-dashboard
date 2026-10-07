@@ -80,6 +80,60 @@ function getMetafieldValue(
 
 /*
 =========================================================
+METAFIELD IMAGE
+=========================================================
+
+Used for Shopify file/image reference metafields such as
+the Restaurant Logo.
+=========================================================
+*/
+
+function getMetafieldImageUrl(
+  metafields,
+  key,
+) {
+  const metafield =
+    getMetafield(
+      metafields,
+      key,
+    );
+
+  if (!metafield) {
+    return "";
+  }
+
+  const reference =
+    metafield.reference;
+
+  if (!reference) {
+    return "";
+  }
+
+  if (
+    reference.__typename ===
+    "MediaImage"
+  ) {
+    return (
+      reference
+        ?.image
+        ?.url || ""
+    );
+  }
+
+  if (
+    reference.__typename ===
+    "GenericFile"
+  ) {
+    return (
+      reference.url || ""
+    );
+  }
+
+  return "";
+}
+
+/*
+=========================================================
 RATING
 =========================================================
 */
@@ -338,8 +392,6 @@ function buildProduct(
 FETCH RESTAURANT COLLECTIONS
 =========================================================
 
-IMPORTANT:
-
 Products are NOT requested here.
 
 This keeps the Shopify GraphQL query cost low.
@@ -402,6 +454,23 @@ async function fetchRestaurantCollections(
                     key
                     type
                     value
+
+                    reference {
+                      __typename
+
+                      ... on MediaImage {
+                        image {
+                          url
+                          altText
+                          width
+                          height
+                        }
+                      }
+
+                      ... on GenericFile {
+                        url
+                      }
+                    }
                   }
                 }
               }
@@ -466,15 +535,6 @@ async function fetchRestaurantCollections(
 /*
 =========================================================
 FETCH ONE RESTAURANT'S MEAL DEALS
-=========================================================
-
-Products are loaded separately for each restaurant.
-
-Only 20 products are requested per page and only
-20 variants per product.
-
-This prevents the Shopify query from exceeding
-the single-query cost limit.
 =========================================================
 */
 
@@ -669,9 +729,24 @@ function buildRestaurant(
     url:
       `https://mealdealhub.co.uk/collections/${collection.handle}`,
 
+    /*
+    Main restaurant / collection image
+    */
+
     image:
       getImageUrl(
         collection,
+      ),
+
+    /*
+    Restaurant logo from:
+    custom.restaurant_logo
+    */
+
+    restaurantLogo:
+      getMetafieldImageUrl(
+        metafields,
+        "restaurant_logo",
       ),
 
     status,
@@ -817,7 +892,7 @@ export async function loader() {
 
     /*
     -----------------------------------------------------
-    BUILD BASIC RESTAURANTS FIRST
+    BUILD BASIC RESTAURANTS
     -----------------------------------------------------
     */
 
@@ -827,11 +902,6 @@ export async function loader() {
           buildRestaurant,
         )
 
-        /*
-        Only collections that have a Restaurant ID
-        are Meal Deal Hub restaurants.
-        */
-
         .filter(
           (restaurant) =>
             Boolean(
@@ -839,10 +909,6 @@ export async function loader() {
                 .restaurantId,
             ),
         )
-
-        /*
-        Do not expose inactive restaurants.
-        */
 
         .filter(
           (restaurant) =>
@@ -861,13 +927,6 @@ export async function loader() {
     /*
     -----------------------------------------------------
     LOAD EACH RESTAURANT'S MEAL DEALS
-    -----------------------------------------------------
-
-    These are deliberately separate Shopify requests.
-
-    That prevents:
-
-    Query cost exceeds single query max cost limit.
     -----------------------------------------------------
     */
 
@@ -894,11 +953,6 @@ export async function loader() {
           deals,
         });
       } catch (error) {
-        /*
-        If one restaurant's products fail,
-        do not break the entire restaurant API.
-        */
-
         console.error(
           "MEAL DEAL LOAD ERROR:",
           restaurant.name,
