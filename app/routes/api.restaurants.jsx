@@ -30,10 +30,7 @@ JSON RESPONSE
 =========================================================
 */
 
-function jsonResponse(
-  data,
-  status = 200,
-) {
+function jsonResponse(data, status = 200) {
   return new Response(
     JSON.stringify(data),
     {
@@ -87,9 +84,7 @@ RATING
 =========================================================
 */
 
-function getRating(
-  metafields,
-) {
+function getRating(metafields) {
   const metafield =
     getMetafield(
       metafields,
@@ -111,9 +106,7 @@ function getRating(
         parsed?.value ?? 0,
       );
 
-    return Number.isFinite(
-      value,
-    )
+    return Number.isFinite(value)
       ? value
       : 0;
   } catch {
@@ -122,9 +115,7 @@ function getRating(
         metafield.value,
       );
 
-    return Number.isFinite(
-      value,
-    )
+    return Number.isFinite(value)
       ? value
       : 0;
   }
@@ -226,8 +217,7 @@ function getProductImageUrl(
   return (
     product
       ?.featuredImage
-      ?.url ||
-    ""
+      ?.url || ""
   );
 }
 
@@ -268,7 +258,9 @@ function buildProduct(
   product,
 ) {
   const variants =
-    product?.variants?.nodes || [];
+    product
+      ?.variants
+      ?.nodes || [];
 
   const firstVariant =
     variants[0] || null;
@@ -286,14 +278,10 @@ function buildProduct(
     description:
       product.description || "",
 
-    descriptionHtml:
-      product.descriptionHtml || "",
-
     availableForSale:
       Boolean(
-        product.totalInventory ===
-          null ||
-        product.totalInventory > 0,
+        firstVariant
+          ?.availableForSale,
       ),
 
     image:
@@ -329,7 +317,8 @@ function buildProduct(
 
           availableForSale:
             Boolean(
-              variant.availableForSale,
+              variant
+                .availableForSale,
             ),
 
           price:
@@ -346,7 +335,14 @@ function buildProduct(
 
 /*
 =========================================================
-SHOPIFY COLLECTIONS + PRODUCTS
+FETCH RESTAURANT COLLECTIONS
+=========================================================
+
+IMPORTANT:
+
+Products are NOT requested here.
+
+This keeps the Shopify GraphQL query cost low.
 =========================================================
 */
 
@@ -357,10 +353,9 @@ async function fetchRestaurantCollections(
 
   let cursor = null;
   let hasNextPage = true;
+  let page = 0;
 
   const MAX_PAGES = 10;
-
-  let page = 0;
 
   while (
     hasNextPage &&
@@ -375,7 +370,7 @@ async function fetchRestaurantCollections(
             $cursor: String
           ) {
             collections(
-              first: 100
+              first: 50
               after: $cursor
               sortKey: TITLE
             ) {
@@ -396,12 +391,10 @@ async function fetchRestaurantCollections(
                 image {
                   url
                   altText
-                  width
-                  height
                 }
 
                 metafields(
-                  first: 100
+                  first: 40
                   namespace: "custom"
                 ) {
                   nodes {
@@ -409,56 +402,6 @@ async function fetchRestaurantCollections(
                     key
                     type
                     value
-                  }
-                }
-
-                products(
-                  first: 100
-                  sortKey: COLLECTION_DEFAULT
-                ) {
-                  nodes {
-                    id
-                    title
-                    handle
-                    description
-                    descriptionHtml
-                    totalInventory
-
-                    featuredImage {
-                      url
-                      altText
-                      width
-                      height
-                    }
-
-                    priceRangeV2 {
-                      minVariantPrice {
-                        amount
-                        currencyCode
-                      }
-
-                      maxVariantPrice {
-                        amount
-                        currencyCode
-                      }
-                    }
-
-                    variants(
-                      first: 100
-                    ) {
-                      nodes {
-                        id
-                        title
-                        availableForSale
-
-                        price
-
-                        image {
-                          url
-                          altText
-                        }
-                      }
-                    }
                   }
                 }
               }
@@ -475,23 +418,23 @@ async function fetchRestaurantCollections(
     const result =
       await response.json();
 
-    if (
-      result.errors?.length
-    ) {
+    if (result.errors?.length) {
       console.error(
-        "RESTAURANT API SHOPIFY ERROR:",
+        "RESTAURANT COLLECTION QUERY ERROR:",
         JSON.stringify(
           result.errors,
         ),
       );
 
       throw new Error(
-        "Could not load restaurants from Shopify.",
+        "Could not load restaurant collections.",
       );
     }
 
     const connection =
-      result.data?.collections;
+      result
+        ?.data
+        ?.collections;
 
     const nodes =
       connection?.nodes || [];
@@ -510,8 +453,7 @@ async function fetchRestaurantCollections(
     cursor =
       connection
         ?.pageInfo
-        ?.endCursor ||
-      null;
+        ?.endCursor || null;
 
     if (!cursor) {
       hasNextPage = false;
@@ -523,7 +465,162 @@ async function fetchRestaurantCollections(
 
 /*
 =========================================================
-CONVERT SHOPIFY COLLECTION TO APP RESTAURANT
+FETCH ONE RESTAURANT'S MEAL DEALS
+=========================================================
+
+Products are loaded separately for each restaurant.
+
+Only 20 products are requested per page and only
+20 variants per product.
+
+This prevents the Shopify query from exceeding
+the single-query cost limit.
+=========================================================
+*/
+
+async function fetchCollectionProducts(
+  admin,
+  collectionId,
+) {
+  const products = [];
+
+  let cursor = null;
+  let hasNextPage = true;
+  let page = 0;
+
+  const MAX_PAGES = 10;
+
+  while (
+    hasNextPage &&
+    page < MAX_PAGES
+  ) {
+    page += 1;
+
+    const response =
+      await admin.graphql(
+        `
+          query MealDealHubRestaurantProducts(
+            $id: ID!
+            $cursor: String
+          ) {
+            collection(id: $id) {
+              products(
+                first: 20
+                after: $cursor
+                sortKey: COLLECTION_DEFAULT
+              ) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+
+                nodes {
+                  id
+                  title
+                  handle
+                  description
+
+                  featuredImage {
+                    url
+                    altText
+                  }
+
+                  priceRangeV2 {
+                    minVariantPrice {
+                      amount
+                      currencyCode
+                    }
+                  }
+
+                  variants(
+                    first: 20
+                  ) {
+                    nodes {
+                      id
+                      title
+                      availableForSale
+                      price
+
+                      image {
+                        url
+                        altText
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            id:
+              collectionId,
+
+            cursor,
+          },
+        },
+      );
+
+    const result =
+      await response.json();
+
+    if (result.errors?.length) {
+      console.error(
+        "RESTAURANT PRODUCT QUERY ERROR:",
+        collectionId,
+        JSON.stringify(
+          result.errors,
+        ),
+      );
+
+      throw new Error(
+        "Could not load restaurant meal deals.",
+      );
+    }
+
+    const connection =
+      result
+        ?.data
+        ?.collection
+        ?.products;
+
+    if (!connection) {
+      return [];
+    }
+
+    const nodes =
+      connection.nodes || [];
+
+    products.push(
+      ...nodes,
+    );
+
+    hasNextPage =
+      Boolean(
+        connection
+          ?.pageInfo
+          ?.hasNextPage,
+      );
+
+    cursor =
+      connection
+        ?.pageInfo
+        ?.endCursor || null;
+
+    if (!cursor) {
+      hasNextPage = false;
+    }
+  }
+
+  return products.map(
+    buildProduct,
+  );
+}
+
+/*
+=========================================================
+BUILD BASIC RESTAURANT
 =========================================================
 */
 
@@ -556,22 +653,6 @@ function buildRestaurant(
     )
       .trim()
       .toLowerCase();
-
-  /*
-  -------------------------------------------------------
-  PRODUCTS / MEAL DEALS
-  -------------------------------------------------------
-  */
-
-  const products =
-    collection
-      ?.products
-      ?.nodes || [];
-
-  const deals =
-    products.map(
-      buildProduct,
-    );
 
   return {
     shopifyCollectionId:
@@ -634,21 +715,39 @@ function buildRestaurant(
       ),
 
     dealCount:
-      deals.length,
+      Number(
+        collection
+          ?.productsCount
+          ?.count || 0,
+      ),
 
     openingHours:
       getOpeningHours(
         metafields,
       ),
 
-    /*
-    -----------------------------------------------------
-    ACTUAL MEAL DEAL PRODUCTS
-    -----------------------------------------------------
-    */
-
-    deals,
+    deals: [],
   };
+}
+
+/*
+=========================================================
+NORMALISE RESTAURANT STATUS
+=========================================================
+*/
+
+function normaliseStatus(
+  status,
+) {
+  return String(
+    status || "",
+  )
+    .toLowerCase()
+    .replace(
+      /[\[\]"']/g,
+      "",
+    )
+    .trim();
 }
 
 /*
@@ -696,15 +795,8 @@ export async function loader() {
   try {
     /*
     -----------------------------------------------------
-    SERVER-SIDE SHOPIFY CONNECTION
+    CONNECT TO SHOPIFY
     -----------------------------------------------------
-
-    Uses the existing offline Shopify session stored
-    securely in Prisma.
-
-    Shopify Admin credentials stay on the server.
-
-    They are never sent to the mobile application.
     */
 
     const { admin } =
@@ -714,7 +806,7 @@ export async function loader() {
 
     /*
     -----------------------------------------------------
-    LOAD COLLECTIONS
+    LOAD RESTAURANT COLLECTIONS
     -----------------------------------------------------
     */
 
@@ -725,61 +817,39 @@ export async function loader() {
 
     /*
     -----------------------------------------------------
-    BUILD RESTAURANTS
+    BUILD BASIC RESTAURANTS FIRST
     -----------------------------------------------------
     */
 
-    const restaurants =
+    const basicRestaurants =
       collections
         .map(
           buildRestaurant,
         )
 
         /*
-        -------------------------------------------------
-        ONLY RESTAURANT COLLECTIONS
-        -------------------------------------------------
+        Only collections that have a Restaurant ID
+        are Meal Deal Hub restaurants.
         */
 
         .filter(
           (restaurant) =>
             Boolean(
-              restaurant.restaurantId,
+              restaurant
+                .restaurantId,
             ),
         )
 
         /*
-        -------------------------------------------------
-        HIDE INACTIVE RESTAURANTS
-        -------------------------------------------------
+        Do not expose inactive restaurants.
         */
 
         .filter(
-          (restaurant) => {
-            const status =
-              String(
-                restaurant.status ||
-                  "",
-              )
-                .toLowerCase()
-                .replace(
-                  /[\[\]"']/g,
-                  "",
-                )
-                .trim();
-
-            return (
-              status !==
-              "inactive"
-            );
-          },
+          (restaurant) =>
+            normaliseStatus(
+              restaurant.status,
+            ) !== "inactive",
         )
-
-        /*
-        -------------------------------------------------
-        ALPHABETICAL ORDER
-        -------------------------------------------------
-        */
 
         .sort(
           (a, b) =>
@@ -787,6 +857,61 @@ export async function loader() {
               b.name,
             ),
         );
+
+    /*
+    -----------------------------------------------------
+    LOAD EACH RESTAURANT'S MEAL DEALS
+    -----------------------------------------------------
+
+    These are deliberately separate Shopify requests.
+
+    That prevents:
+
+    Query cost exceeds single query max cost limit.
+    -----------------------------------------------------
+    */
+
+    const restaurants = [];
+
+    for (
+      const restaurant
+      of basicRestaurants
+    ) {
+      try {
+        const deals =
+          await fetchCollectionProducts(
+            admin,
+            restaurant
+              .shopifyCollectionId,
+          );
+
+        restaurants.push({
+          ...restaurant,
+
+          dealCount:
+            deals.length,
+
+          deals,
+        });
+      } catch (error) {
+        /*
+        If one restaurant's products fail,
+        do not break the entire restaurant API.
+        */
+
+        console.error(
+          "MEAL DEAL LOAD ERROR:",
+          restaurant.name,
+          error,
+        );
+
+        restaurants.push({
+          ...restaurant,
+
+          deals: [],
+        });
+      }
+    }
 
     /*
     -----------------------------------------------------
