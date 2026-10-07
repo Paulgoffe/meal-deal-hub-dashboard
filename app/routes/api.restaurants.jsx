@@ -4,19 +4,6 @@ import { unauthenticated } from "../shopify.server";
 =========================================================
 SHOPIFY STORE
 =========================================================
-
-IMPORTANT:
-
-Shopify's authenticated offline session for the live
-Meal Deal Hub store is stored under this permanent
-Shopify shop domain:
-
-bite-pfyaja4s.myshopify.com
-
-Do not use the public/store-facing alias here because
-unauthenticated.admin() looks up the offline session
-using the exact Shopify shop domain stored in Prisma.
-=========================================================
 */
 
 const SHOP_DOMAIN =
@@ -214,7 +201,7 @@ function getOpeningHours(
 
 /*
 =========================================================
-IMAGE
+COLLECTION IMAGE
 =========================================================
 */
 
@@ -229,7 +216,137 @@ function getImageUrl(
 
 /*
 =========================================================
-SHOPIFY COLLECTIONS
+PRODUCT IMAGE
+=========================================================
+*/
+
+function getProductImageUrl(
+  product,
+) {
+  return (
+    product
+      ?.featuredImage
+      ?.url ||
+    ""
+  );
+}
+
+/*
+=========================================================
+PRODUCT PRICE
+=========================================================
+*/
+
+function getProductPrice(
+  product,
+) {
+  const amount =
+    product
+      ?.priceRangeV2
+      ?.minVariantPrice
+      ?.amount || "0.00";
+
+  const currencyCode =
+    product
+      ?.priceRangeV2
+      ?.minVariantPrice
+      ?.currencyCode || "GBP";
+
+  return {
+    amount,
+    currencyCode,
+  };
+}
+
+/*
+=========================================================
+BUILD PRODUCT / MEAL DEAL
+=========================================================
+*/
+
+function buildProduct(
+  product,
+) {
+  const variants =
+    product?.variants?.nodes || [];
+
+  const firstVariant =
+    variants[0] || null;
+
+  return {
+    id:
+      product.id,
+
+    title:
+      product.title,
+
+    handle:
+      product.handle,
+
+    description:
+      product.description || "",
+
+    descriptionHtml:
+      product.descriptionHtml || "",
+
+    availableForSale:
+      Boolean(
+        product.totalInventory ===
+          null ||
+        product.totalInventory > 0,
+      ),
+
+    image:
+      getProductImageUrl(
+        product,
+      ),
+
+    price:
+      getProductPrice(
+        product,
+      ),
+
+    url:
+      `https://mealdealhub.co.uk/products/${product.handle}`,
+
+    variantId:
+      firstVariant?.id || "",
+
+    variantTitle:
+      firstVariant?.title || "",
+
+    variantPrice:
+      firstVariant?.price || null,
+
+    variants:
+      variants.map(
+        (variant) => ({
+          id:
+            variant.id,
+
+          title:
+            variant.title,
+
+          availableForSale:
+            Boolean(
+              variant.availableForSale,
+            ),
+
+          price:
+            variant.price,
+
+          image:
+            variant
+              ?.image
+              ?.url || "",
+        }),
+      ),
+  };
+}
+
+/*
+=========================================================
+SHOPIFY COLLECTIONS + PRODUCTS
 =========================================================
 */
 
@@ -294,6 +411,56 @@ async function fetchRestaurantCollections(
                     value
                   }
                 }
+
+                products(
+                  first: 100
+                  sortKey: COLLECTION_DEFAULT
+                ) {
+                  nodes {
+                    id
+                    title
+                    handle
+                    description
+                    descriptionHtml
+                    totalInventory
+
+                    featuredImage {
+                      url
+                      altText
+                      width
+                      height
+                    }
+
+                    priceRangeV2 {
+                      minVariantPrice {
+                        amount
+                        currencyCode
+                      }
+
+                      maxVariantPrice {
+                        amount
+                        currencyCode
+                      }
+                    }
+
+                    variants(
+                      first: 100
+                    ) {
+                      nodes {
+                        id
+                        title
+                        availableForSale
+
+                        price
+
+                        image {
+                          url
+                          altText
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -335,12 +502,14 @@ async function fetchRestaurantCollections(
 
     hasNextPage =
       Boolean(
-        connection?.pageInfo
+        connection
+          ?.pageInfo
           ?.hasNextPage,
       );
 
     cursor =
-      connection?.pageInfo
+      connection
+        ?.pageInfo
         ?.endCursor ||
       null;
 
@@ -362,7 +531,8 @@ function buildRestaurant(
   collection,
 ) {
   const metafields =
-    collection?.metafields
+    collection
+      ?.metafields
       ?.nodes || [];
 
   const restaurantId =
@@ -386,6 +556,22 @@ function buildRestaurant(
     )
       .trim()
       .toLowerCase();
+
+  /*
+  -------------------------------------------------------
+  PRODUCTS / MEAL DEALS
+  -------------------------------------------------------
+  */
+
+  const products =
+    collection
+      ?.products
+      ?.nodes || [];
+
+  const deals =
+    products.map(
+      buildProduct,
+    );
 
   return {
     shopifyCollectionId:
@@ -448,16 +634,20 @@ function buildRestaurant(
       ),
 
     dealCount:
-      Number(
-        collection
-          ?.productsCount
-          ?.count || 0,
-      ),
+      deals.length,
 
     openingHours:
       getOpeningHours(
         metafields,
       ),
+
+    /*
+    -----------------------------------------------------
+    ACTUAL MEAL DEAL PRODUCTS
+    -----------------------------------------------------
+    */
+
+    deals,
   };
 }
 
@@ -478,6 +668,7 @@ export async function action({
       null,
       {
         status: 204,
+
         headers:
           corsHeaders(),
       },
@@ -487,6 +678,7 @@ export async function action({
   return jsonResponse(
     {
       success: false,
+
       error:
         "Method not allowed.",
     },
@@ -505,12 +697,14 @@ export async function loader() {
     /*
     -----------------------------------------------------
     SERVER-SIDE SHOPIFY CONNECTION
+    -----------------------------------------------------
 
     Uses the existing offline Shopify session stored
     securely in Prisma.
 
-    No Admin API access token is exposed to the app.
-    -----------------------------------------------------
+    Shopify Admin credentials stay on the server.
+
+    They are never sent to the mobile application.
     */
 
     const { admin } =
@@ -541,6 +735,12 @@ export async function loader() {
           buildRestaurant,
         )
 
+        /*
+        -------------------------------------------------
+        ONLY RESTAURANT COLLECTIONS
+        -------------------------------------------------
+        */
+
         .filter(
           (restaurant) =>
             Boolean(
@@ -548,11 +748,38 @@ export async function loader() {
             ),
         )
 
+        /*
+        -------------------------------------------------
+        HIDE INACTIVE RESTAURANTS
+        -------------------------------------------------
+        */
+
         .filter(
-          (restaurant) =>
-            restaurant.status !==
-            "inactive",
+          (restaurant) => {
+            const status =
+              String(
+                restaurant.status ||
+                  "",
+              )
+                .toLowerCase()
+                .replace(
+                  /[\[\]"']/g,
+                  "",
+                )
+                .trim();
+
+            return (
+              status !==
+              "inactive"
+            );
+          },
         )
+
+        /*
+        -------------------------------------------------
+        ALPHABETICAL ORDER
+        -------------------------------------------------
+        */
 
         .sort(
           (a, b) =>
