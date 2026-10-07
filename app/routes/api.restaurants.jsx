@@ -1,8 +1,26 @@
 import { unauthenticated } from "../shopify.server";
 
+/*
+=========================================================
+SHOPIFY STORE
+=========================================================
+
+IMPORTANT:
+
+Shopify's authenticated offline session for the live
+Meal Deal Hub store is stored under this permanent
+Shopify shop domain:
+
+bite-pfyaja4s.myshopify.com
+
+Do not use the public/store-facing alias here because
+unauthenticated.admin() looks up the offline session
+using the exact Shopify shop domain stored in Prisma.
+=========================================================
+*/
+
 const SHOP_DOMAIN =
-  process.env.SHOP_CUSTOM_DOMAIN ||
-  "mealdealhub.myshopify.com";
+  "bite-pfyaja4s.myshopify.com";
 
 /*
 =========================================================
@@ -95,18 +113,6 @@ function getRating(
     return 0;
   }
 
-  /*
-    Shopify rating metafields normally return JSON:
-
-    {
-      "value": "4.5",
-      "scale_min": "1.0",
-      "scale_max": "5.0"
-    }
-
-    We also support a plain numeric value just in case.
-  */
-
   try {
     const parsed =
       JSON.parse(
@@ -155,18 +161,6 @@ function getDeliveryZones(
   if (!raw) {
     return [];
   }
-
-  /*
-    Supports:
-
-    DE1, DE21, DE22
-
-    or:
-
-    DE1
-    DE21
-    DE22
-  */
 
   return String(raw)
     .split(/[\n,]+/)
@@ -247,11 +241,6 @@ async function fetchRestaurantCollections(
   let cursor = null;
   let hasNextPage = true;
 
-  /*
-    More than enough for Meal Deal Hub now,
-    while still supporting future restaurants.
-  */
-
   const MAX_PAGES = 10;
 
   let page = 0;
@@ -282,6 +271,7 @@ async function fetchRestaurantCollections(
                 id
                 title
                 handle
+
                 productsCount {
                   count
                 }
@@ -475,10 +465,6 @@ function buildRestaurant(
 =========================================================
 OPTIONS
 =========================================================
-
-Allows the React Native app / web clients to
-make requests to this endpoint.
-=========================================================
 */
 
 export async function action({
@@ -519,11 +505,12 @@ export async function loader() {
     /*
     -----------------------------------------------------
     SERVER-SIDE SHOPIFY CONNECTION
+
+    Uses the existing offline Shopify session stored
+    securely in Prisma.
+
+    No Admin API access token is exposed to the app.
     -----------------------------------------------------
-
-    The Admin API token remains on the server.
-
-    Nothing private is sent to the mobile app.
     */
 
     const { admin } =
@@ -554,25 +541,12 @@ export async function loader() {
           buildRestaurant,
         )
 
-        /*
-          Only collections configured as restaurants
-          should enter the app.
-
-          Restaurant ID is the identifier already
-          used by Meal Deal Hub.
-        */
-
         .filter(
           (restaurant) =>
             Boolean(
               restaurant.restaurantId,
             ),
         )
-
-        /*
-          Same principle as the website:
-          inactive restaurants do not appear.
-        */
 
         .filter(
           (restaurant) =>
