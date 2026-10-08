@@ -1,40 +1,28 @@
-const SHOPIFY_STORE_DOMAIN =
-  'bite-pfyaja4s.myshopify.com';
+import { unauthenticated } from "../shopify.server";
 
-const STOREFRONT_API_VERSION = '2026-10';
+/*
+=========================================================
+SHOPIFY STORE
+=========================================================
+*/
 
-const CART_CREATE_MUTATION = `
-  mutation CartCreate($input: CartInput!) {
-    cartCreate(input: $input) {
-      cart {
-        id
-        checkoutUrl
-        totalQuantity
-        cost {
-          subtotalAmount {
-            amount
-            currencyCode
-          }
-          totalAmount {
-            amount
-            currencyCode
-          }
-        }
-      }
+const SHOP_DOMAIN =
+  "bite-pfyaja4s.myshopify.com";
 
-      userErrors {
-        field
-        message
-        code
-      }
+/*
+=========================================================
+CORS
+=========================================================
+*/
 
-      warnings {
-        code
-        message
-      }
-    }
-  }
-`;
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store",
+  };
+}
 
 /*
 =========================================================
@@ -47,546 +35,970 @@ function jsonResponse(data, status = 200) {
     JSON.stringify(data),
     {
       status,
+
       headers: {
-        'Content-Type':
-          'application/json; charset=utf-8',
+        "Content-Type":
+          "application/json; charset=utf-8",
 
-        'Access-Control-Allow-Origin':
-          '*',
-
-        'Access-Control-Allow-Headers':
-          'Content-Type',
-
-        'Access-Control-Allow-Methods':
-          'GET, POST, OPTIONS',
-
-        'Cache-Control':
-          'no-store',
+        ...corsHeaders(),
       },
-    }
+    },
   );
 }
 
 /*
 =========================================================
-GET /api/checkout
-
-This lets us confirm that the route is live.
-Actual checkout creation uses POST.
+METAFIELD HELPERS
 =========================================================
 */
 
-export async function loader() {
-  return jsonResponse({
-    success: true,
-    message:
-      'Meal Deal Hub checkout API is live.',
-  });
+function getMetafield(
+  metafields,
+  key,
+) {
+  return (
+    metafields?.find(
+      (metafield) =>
+        metafield?.namespace ===
+          "custom" &&
+        metafield?.key === key,
+    ) || null
+  );
+}
+
+function getMetafieldValue(
+  metafields,
+  key,
+) {
+  return (
+    getMetafield(
+      metafields,
+      key,
+    )?.value || ""
+  );
 }
 
 /*
 =========================================================
-POST /api/checkout
+METAFIELD IMAGE
+=========================================================
+
+Used for Shopify file/image reference metafields such as
+the Restaurant Logo.
+=========================================================
+*/
+
+function getMetafieldImageUrl(
+  metafields,
+  key,
+) {
+  const metafield =
+    getMetafield(
+      metafields,
+      key,
+    );
+
+  if (!metafield) {
+    return "";
+  }
+
+  const reference =
+    metafield.reference;
+
+  if (!reference) {
+    return "";
+  }
+
+  if (
+    reference.__typename ===
+    "MediaImage"
+  ) {
+    return (
+      reference
+        ?.image
+        ?.url || ""
+    );
+  }
+
+  if (
+    reference.__typename ===
+    "GenericFile"
+  ) {
+    return (
+      reference.url || ""
+    );
+  }
+
+  return "";
+}
+
+/*
+=========================================================
+RATING
+=========================================================
+*/
+
+function getRating(metafields) {
+  const metafield =
+    getMetafield(
+      metafields,
+      "restaurant_rating",
+    );
+
+  if (!metafield?.value) {
+    return 0;
+  }
+
+  try {
+    const parsed =
+      JSON.parse(
+        metafield.value,
+      );
+
+    const value =
+      Number(
+        parsed?.value ?? 0,
+      );
+
+    return Number.isFinite(value)
+      ? value
+      : 0;
+  } catch {
+    const value =
+      Number(
+        metafield.value,
+      );
+
+    return Number.isFinite(value)
+      ? value
+      : 0;
+  }
+}
+
+/*
+=========================================================
+DELIVERY ZONES
+=========================================================
+*/
+
+function getDeliveryZones(
+  metafields,
+) {
+  const raw =
+    getMetafieldValue(
+      metafields,
+      "delivery_zones",
+    );
+
+  if (!raw) {
+    return [];
+  }
+
+  return String(raw)
+    .split(/[\n,]+/)
+    .map((value) =>
+      value
+        .trim()
+        .toUpperCase(),
+    )
+    .filter(Boolean);
+}
+
+/*
+=========================================================
+OPENING HOURS
+=========================================================
+*/
+
+function getOpeningHours(
+  metafields,
+) {
+  const days = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+  ];
+
+  const hours = {};
+
+  for (const day of days) {
+    hours[day] = {
+      opening:
+        getMetafieldValue(
+          metafields,
+          `${day}_opening`,
+        ),
+
+      closing:
+        getMetafieldValue(
+          metafields,
+          `${day}_closing`,
+        ),
+    };
+  }
+
+  return hours;
+}
+
+/*
+=========================================================
+COLLECTION IMAGE
+=========================================================
+*/
+
+function getImageUrl(
+  collection,
+) {
+  return (
+    collection?.image?.url ||
+    ""
+  );
+}
+
+/*
+=========================================================
+PRODUCT IMAGE
+=========================================================
+*/
+
+function getProductImageUrl(
+  product,
+) {
+  return (
+    product
+      ?.featuredImage
+      ?.url || ""
+  );
+}
+
+/*
+=========================================================
+PRODUCT PRICE
+=========================================================
+*/
+
+function getProductPrice(
+  product,
+) {
+  const amount =
+    product
+      ?.priceRangeV2
+      ?.minVariantPrice
+      ?.amount || "0.00";
+
+  const currencyCode =
+    product
+      ?.priceRangeV2
+      ?.minVariantPrice
+      ?.currencyCode || "GBP";
+
+  return {
+    amount,
+    currencyCode,
+  };
+}
+
+/*
+=========================================================
+BUILD PRODUCT / MEAL DEAL
+=========================================================
+*/
+
+function buildProduct(
+  product,
+) {
+  const variants =
+    product
+      ?.variants
+      ?.nodes || [];
+
+  const firstVariant =
+    variants[0] || null;
+
+  return {
+    id:
+      product.id,
+
+    title:
+      product.title,
+
+    handle:
+      product.handle,
+
+    description:
+      product.description || "",
+
+    availableForSale:
+      Boolean(
+        firstVariant
+          ?.availableForSale,
+      ),
+
+    image:
+      getProductImageUrl(
+        product,
+      ),
+
+    price:
+      getProductPrice(
+        product,
+      ),
+
+    url:
+      `https://mealdealhub.co.uk/products/${product.handle}`,
+
+    variantId:
+      firstVariant?.id || "",
+
+    variantTitle:
+      firstVariant?.title || "",
+
+    variantPrice:
+      firstVariant?.price || null,
+
+    variants:
+      variants.map(
+        (variant) => ({
+          id:
+            variant.id,
+
+          title:
+            variant.title,
+
+          availableForSale:
+            Boolean(
+              variant
+                .availableForSale,
+            ),
+
+          price:
+            variant.price,
+
+          image:
+            variant
+              ?.image
+              ?.url || "",
+        }),
+      ),
+  };
+}
+
+/*
+=========================================================
+FETCH RESTAURANT COLLECTIONS
+=========================================================
+
+Products are NOT requested here.
+
+This keeps the Shopify GraphQL query cost low.
+=========================================================
+*/
+
+async function fetchRestaurantCollections(
+  admin,
+) {
+  const collections = [];
+
+  let cursor = null;
+  let hasNextPage = true;
+  let page = 0;
+
+  const MAX_PAGES = 10;
+
+  while (
+    hasNextPage &&
+    page < MAX_PAGES
+  ) {
+    page += 1;
+
+    const response =
+      await admin.graphql(
+        `
+          query MealDealHubRestaurants(
+            $cursor: String
+          ) {
+            collections(
+              first: 50
+              after: $cursor
+              sortKey: TITLE
+            ) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+
+              nodes {
+                id
+                title
+                handle
+
+                productsCount {
+                  count
+                }
+
+                image {
+                  url
+                  altText
+                }
+
+                metafields(
+                  first: 40
+                  namespace: "custom"
+                ) {
+                  nodes {
+                    namespace
+                    key
+                    type
+                    value
+
+                    reference {
+                      __typename
+
+                      ... on MediaImage {
+                        image {
+                          url
+                          altText
+                          width
+                          height
+                        }
+                      }
+
+                      ... on GenericFile {
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            cursor,
+          },
+        },
+      );
+
+    const result =
+      await response.json();
+
+    if (result.errors?.length) {
+      console.error(
+        "RESTAURANT COLLECTION QUERY ERROR:",
+        JSON.stringify(
+          result.errors,
+        ),
+      );
+
+      throw new Error(
+        "Could not load restaurant collections.",
+      );
+    }
+
+    const connection =
+      result
+        ?.data
+        ?.collections;
+
+    const nodes =
+      connection?.nodes || [];
+
+    collections.push(
+      ...nodes,
+    );
+
+    hasNextPage =
+      Boolean(
+        connection
+          ?.pageInfo
+          ?.hasNextPage,
+      );
+
+    cursor =
+      connection
+        ?.pageInfo
+        ?.endCursor || null;
+
+    if (!cursor) {
+      hasNextPage = false;
+    }
+  }
+
+  return collections;
+}
+
+/*
+=========================================================
+FETCH ONE RESTAURANT'S MEAL DEALS
+=========================================================
+*/
+
+async function fetchCollectionProducts(
+  admin,
+  collectionId,
+) {
+  const products = [];
+
+  let cursor = null;
+  let hasNextPage = true;
+  let page = 0;
+
+  const MAX_PAGES = 10;
+
+  while (
+    hasNextPage &&
+    page < MAX_PAGES
+  ) {
+    page += 1;
+
+    const response =
+      await admin.graphql(
+        `
+          query MealDealHubRestaurantProducts(
+            $id: ID!
+            $cursor: String
+          ) {
+            collection(id: $id) {
+              products(
+                first: 20
+                after: $cursor
+                sortKey: COLLECTION_DEFAULT
+              ) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+
+                nodes {
+                  id
+                  title
+                  handle
+                  description
+
+                  featuredImage {
+                    url
+                    altText
+                  }
+
+                  priceRangeV2 {
+                    minVariantPrice {
+                      amount
+                      currencyCode
+                    }
+                  }
+
+                  variants(
+                    first: 20
+                  ) {
+                    nodes {
+                      id
+                      title
+                      availableForSale
+                      price
+
+                      image {
+                        url
+                        altText
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            id:
+              collectionId,
+
+            cursor,
+          },
+        },
+      );
+
+    const result =
+      await response.json();
+
+    if (result.errors?.length) {
+      console.error(
+        "RESTAURANT PRODUCT QUERY ERROR:",
+        collectionId,
+        JSON.stringify(
+          result.errors,
+        ),
+      );
+
+      throw new Error(
+        "Could not load restaurant meal deals.",
+      );
+    }
+
+    const connection =
+      result
+        ?.data
+        ?.collection
+        ?.products;
+
+    if (!connection) {
+      return [];
+    }
+
+    const nodes =
+      connection.nodes || [];
+
+    products.push(
+      ...nodes,
+    );
+
+    hasNextPage =
+      Boolean(
+        connection
+          ?.pageInfo
+          ?.hasNextPage,
+      );
+
+    cursor =
+      connection
+        ?.pageInfo
+        ?.endCursor || null;
+
+    if (!cursor) {
+      hasNextPage = false;
+    }
+  }
+
+  return products.map(
+    buildProduct,
+  );
+}
+
+/*
+=========================================================
+BUILD BASIC RESTAURANT
+=========================================================
+*/
+
+function buildRestaurant(
+  collection,
+) {
+  const metafields =
+    collection
+      ?.metafields
+      ?.nodes || [];
+
+  const restaurantId =
+    getMetafieldValue(
+      metafields,
+      "restaurant_id",
+    );
+
+  const status =
+    getMetafieldValue(
+      metafields,
+      "restaurant_status",
+    )
+      .trim()
+      .toLowerCase();
+
+  const orderType =
+    getMetafieldValue(
+      metafields,
+      "order_type",
+    )
+      .trim()
+      .toLowerCase();
+
+  return {
+    shopifyCollectionId:
+      collection.id,
+
+    restaurantId,
+
+    name:
+      collection.title,
+
+    handle:
+      collection.handle,
+
+    url:
+      `https://mealdealhub.co.uk/collections/${collection.handle}`,
+
+    /*
+    Main restaurant / collection image
+    */
+
+    image:
+      getImageUrl(
+        collection,
+      ),
+
+    /*
+    Restaurant logo from:
+    custom.restaurant_logo
+    */
+
+    restaurantLogo:
+      getMetafieldImageUrl(
+        metafields,
+        "restaurant_logo",
+      ),
+
+    status,
+
+    orderType,
+
+    rating:
+      getRating(
+        metafields,
+      ),
+
+    address:
+      getMetafieldValue(
+        metafields,
+        "restaurant_address",
+      ),
+
+    postcode:
+      getMetafieldValue(
+        metafields,
+        "restaurant_postcode",
+      )
+        .trim()
+        .toUpperCase(),
+
+    deliveryTime:
+      getMetafieldValue(
+        metafields,
+        "delivery_time",
+      ),
+
+    deliveryZones:
+      getDeliveryZones(
+        metafields,
+      ),
+
+    minimumOrder:
+      getMetafieldValue(
+        metafields,
+        "minimum_order",
+      ),
+
+    dealCount:
+      Number(
+        collection
+          ?.productsCount
+          ?.count || 0,
+      ),
+
+    openingHours:
+      getOpeningHours(
+        metafields,
+      ),
+
+    deals: [],
+  };
+}
+
+/*
+=========================================================
+NORMALISE RESTAURANT STATUS
+=========================================================
+*/
+
+function normaliseStatus(
+  status,
+) {
+  return String(
+    status || "",
+  )
+    .toLowerCase()
+    .replace(
+      /[\[\]"']/g,
+      "",
+    )
+    .trim();
+}
+
+/*
+=========================================================
+OPTIONS
 =========================================================
 */
 
 export async function action({
   request,
 }) {
+  if (
+    request.method ===
+    "OPTIONS"
+  ) {
+    return new Response(
+      null,
+      {
+        status: 204,
+
+        headers:
+          corsHeaders(),
+      },
+    );
+  }
+
+  return jsonResponse(
+    {
+      success: false,
+
+      error:
+        "Method not allowed.",
+    },
+    405,
+  );
+}
+
+/*
+=========================================================
+PUBLIC RESTAURANT API
+=========================================================
+*/
+
+export async function loader() {
   try {
-    if (
-      request.method ===
-      'OPTIONS'
-    ) {
-      return new Response(
-        null,
-        {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin':
-              '*',
-
-            'Access-Control-Allow-Headers':
-              'Content-Type',
-
-            'Access-Control-Allow-Methods':
-              'GET, POST, OPTIONS',
-          },
-        }
-      );
-    }
-
-    if (
-      request.method !==
-      'POST'
-    ) {
-      return jsonResponse(
-        {
-          success: false,
-          error:
-            'Method not allowed.',
-        },
-        405
-      );
-    }
-
     /*
-    =====================================================
-    READ APP CART
-    =====================================================
+    -----------------------------------------------------
+    CONNECT TO SHOPIFY
+    -----------------------------------------------------
     */
 
-    const body =
-      await request.json();
-
-    const items =
-      Array.isArray(
-        body?.items
-      )
-        ? body.items
-        : [];
-
-    const restaurantId =
-      typeof body?.restaurantId ===
-      'string'
-        ? body.restaurantId.trim()
-        : '';
-
-    const restaurantName =
-      typeof body?.restaurantName ===
-      'string'
-        ? body.restaurantName.trim()
-        : '';
-
-    const orderType =
-      typeof body?.orderType ===
-      'string'
-        ? body.orderType
-            .trim()
-            .toLowerCase()
-        : '';
-
-    /*
-    =====================================================
-    EMPTY CART
-    =====================================================
-    */
-
-    if (
-      items.length === 0
-    ) {
-      return jsonResponse(
-        {
-          success: false,
-          error:
-            'Your cart is empty.',
-        },
-        400
+    const { admin } =
+      await unauthenticated.admin(
+        SHOP_DOMAIN,
       );
-    }
 
     /*
-    =====================================================
-    VALIDATE SHOPIFY VARIANTS
-    =====================================================
+    -----------------------------------------------------
+    LOAD RESTAURANT COLLECTIONS
+    -----------------------------------------------------
     */
 
-    const lines = [];
+    const collections =
+      await fetchRestaurantCollections(
+        admin,
+      );
+
+    /*
+    -----------------------------------------------------
+    BUILD BASIC RESTAURANTS
+    -----------------------------------------------------
+    */
+
+    const basicRestaurants =
+      collections
+        .map(
+          buildRestaurant,
+        )
+
+        .filter(
+          (restaurant) =>
+            Boolean(
+              restaurant
+                .restaurantId,
+            ),
+        )
+
+        .filter(
+          (restaurant) =>
+            normaliseStatus(
+              restaurant.status,
+            ) !== "inactive",
+        )
+
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(
+              b.name,
+            ),
+        );
+
+    /*
+    -----------------------------------------------------
+    LOAD EACH RESTAURANT'S MEAL DEALS
+    -----------------------------------------------------
+    */
+
+    const restaurants = [];
 
     for (
-      const item of items
+      const restaurant
+      of basicRestaurants
     ) {
-      const variantId =
-        typeof item?.variantId ===
-        'string'
-          ? item.variantId.trim()
-          : '';
+      try {
+        const deals =
+          await fetchCollectionProducts(
+            admin,
+            restaurant
+              .shopifyCollectionId,
+          );
 
-      const quantity =
-        Number(
-          item?.quantity
+        restaurants.push({
+          ...restaurant,
+
+          dealCount:
+            deals.length,
+
+          deals,
+        });
+      } catch (error) {
+        console.error(
+          "MEAL DEAL LOAD ERROR:",
+          restaurant.name,
+          error,
         );
 
-      if (
-        !variantId ||
-        !variantId.startsWith(
-          'gid://shopify/ProductVariant/'
-        )
-      ) {
-        return jsonResponse(
-          {
-            success: false,
+        restaurants.push({
+          ...restaurant,
 
-            error:
-              'One or more cart items are missing a valid Shopify variant ID.',
-          },
-          400
-        );
+          deals: [],
+        });
       }
-
-      if (
-        !Number.isInteger(
-          quantity
-        ) ||
-        quantity < 1 ||
-        quantity > 99
-      ) {
-        return jsonResponse(
-          {
-            success: false,
-
-            error:
-              'One or more cart items have an invalid quantity.',
-          },
-          400
-        );
-      }
-
-      lines.push({
-        merchandiseId:
-          variantId,
-
-        quantity,
-      });
     }
 
     /*
-    =====================================================
-    STOREFRONT API TOKEN
-
-    Stored securely in Render:
-    SHOPIFY_STOREFRONT_ACCESS_TOKEN
-    =====================================================
-    */
-
-    const storefrontAccessToken =
-      process.env
-        .SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-
-    if (
-      !storefrontAccessToken
-    ) {
-      console.error(
-        'SHOPIFY_STOREFRONT_ACCESS_TOKEN is missing.'
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            'Checkout is not configured yet.',
-        },
-        500
-      );
-    }
-
-    /*
-    =====================================================
-    CART ATTRIBUTES
-    =====================================================
-    */
-
-    const attributes = [];
-
-    if (
-      restaurantId
-    ) {
-      attributes.push({
-        key:
-          'restaurant_id',
-
-        value:
-          restaurantId,
-      });
-    }
-
-    if (
-      restaurantName
-    ) {
-      attributes.push({
-        key:
-          'restaurant_name',
-
-        value:
-          restaurantName,
-      });
-    }
-
-    if (
-      orderType
-    ) {
-      attributes.push({
-        key:
-          'order_type',
-
-        value:
-          orderType,
-      });
-    }
-
-    attributes.push({
-      key:
-        'order_source',
-
-      value:
-        'Meal Deal Hub App',
-    });
-
-    /*
-    =====================================================
-    CREATE SHOPIFY CART
-    =====================================================
-    */
-
-    const shopifyResponse =
-      await fetch(
-        `https://${SHOPIFY_STORE_DOMAIN}/api/${STOREFRONT_API_VERSION}/graphql.json`,
-        {
-          method:
-            'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json',
-
-            'X-Shopify-Storefront-Access-Token':
-              storefrontAccessToken,
-          },
-
-          body:
-            JSON.stringify(
-              {
-                query:
-                  CART_CREATE_MUTATION,
-
-                variables: {
-                  input: {
-                    lines,
-                    attributes,
-                  },
-                },
-              }
-            ),
-        }
-      );
-
-    /*
-    =====================================================
-    READ SHOPIFY RESPONSE
-    =====================================================
-    */
-
-    const responseText =
-      await shopifyResponse.text();
-
-    let shopifyData;
-
-    try {
-      shopifyData =
-        responseText
-          ? JSON.parse(
-              responseText
-            )
-          : {};
-    } catch (
-      error
-    ) {
-      console.error(
-        'Shopify returned invalid JSON:',
-        responseText
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            'Shopify returned an invalid checkout response.',
-        },
-        502
-      );
-    }
-
-    /*
-    =====================================================
-    SHOPIFY HTTP ERROR
-    =====================================================
-    */
-
-    if (
-      !shopifyResponse.ok
-    ) {
-      console.error(
-        'Shopify checkout HTTP error:',
-        shopifyResponse.status,
-        shopifyData
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            shopifyData?.errors?.[0]
-              ?.message ||
-            'Shopify could not create the checkout.',
-        },
-        502
-      );
-    }
-
-    /*
-    =====================================================
-    GRAPHQL ERRORS
-    =====================================================
-    */
-
-    if (
-      Array.isArray(
-        shopifyData?.errors
-      ) &&
-      shopifyData.errors
-        .length > 0
-    ) {
-      console.error(
-        'Shopify GraphQL errors:',
-        shopifyData.errors
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            shopifyData
-              .errors[0]
-              ?.message ||
-            'Shopify could not create the checkout.',
-        },
-        502
-      );
-    }
-
-    /*
-    =====================================================
-    CART ERRORS
-    =====================================================
-    */
-
-    const cartCreate =
-      shopifyData?.data
-        ?.cartCreate;
-
-    const userErrors =
-      Array.isArray(
-        cartCreate?.userErrors
-      )
-        ? cartCreate.userErrors
-        : [];
-
-    if (
-      userErrors.length >
-      0
-    ) {
-      console.error(
-        'Shopify cart errors:',
-        userErrors
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            userErrors[0]
-              ?.message ||
-            'Shopify could not create the cart.',
-
-          details:
-            userErrors,
-        },
-        400
-      );
-    }
-
-    /*
-    =====================================================
-    CHECKOUT URL
-    =====================================================
-    */
-
-    const cart =
-      cartCreate?.cart;
-
-    const checkoutUrl =
-      typeof cart?.checkoutUrl ===
-      'string'
-        ? cart.checkoutUrl
-        : '';
-
-    if (
-      !checkoutUrl
-    ) {
-      console.error(
-        'Shopify returned no checkout URL:',
-        shopifyData
-      );
-
-      return jsonResponse(
-        {
-          success: false,
-
-          error:
-            'Shopify did not return a checkout URL.',
-        },
-        502
-      );
-    }
-
-    /*
-    =====================================================
+    -----------------------------------------------------
     SUCCESS
-    =====================================================
+    -----------------------------------------------------
     */
 
     return jsonResponse({
       success: true,
 
-      cartId:
-        cart.id,
+      count:
+        restaurants.length,
 
-      checkoutUrl,
-
-      totalQuantity:
-        cart.totalQuantity,
-
-      subtotal:
-        cart.cost
-          ?.subtotalAmount ||
-        null,
-
-      total:
-        cart.cost
-          ?.totalAmount ||
-        null,
+      restaurants,
     });
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
-      'Checkout API error:',
-      error
+      "PUBLIC RESTAURANT API ERROR:",
+      error,
     );
 
     return jsonResponse(
       {
         success: false,
 
+        count: 0,
+
+        restaurants: [],
+
         error:
-          'Something went wrong while creating the checkout.',
+          "Could not load restaurants.",
       },
-      500
+      500,
     );
   }
 }
