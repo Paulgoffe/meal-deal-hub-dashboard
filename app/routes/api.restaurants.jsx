@@ -181,27 +181,45 @@ DELIVERY ZONES
 =========================================================
 */
 
-function getDeliveryZones(
-  metafields,
-) {
-  const raw =
-    getMetafieldValue(
-      metafields,
-      "delivery_zones",
-    );
+function getDeliveryZones(metafields) {
+  const raw = getMetafieldValue(
+    metafields,
+    "delivery_zones"
+  );
 
   if (!raw) {
     return [];
   }
 
-  return String(raw)
-    .split(/[\n,]+/)
-    .map((value) =>
-      value
-        .trim()
-        .toUpperCase(),
-    )
-    .filter(Boolean);
+  const text = String(raw).toUpperCase();
+
+  // Recognise delivery zones separated by
+  // spaces, commas, or new lines.
+  //
+  // Examples:
+  // MK1=2.00 MK2=3.00 MK3=3.50
+  // MK1=2.00, MK2=3.00
+  // MK1=2.00
+  // MK2=3.00
+
+  const matches = text.matchAll(
+    /([A-Z]{1,2}\d[A-Z\d]?)\s*=\s*£?\s*(\d+(?:\.\d{1,2})?)/g
+  );
+
+  const zones = [];
+
+  for (const match of matches) {
+    const postcode = match[1];
+    const price = Number(match[2]);
+
+    if (Number.isFinite(price)) {
+      zones.push(
+        `${postcode}=${price.toFixed(2)}`
+      );
+    }
+  }
+
+  return zones;
 }
 
 /*
