@@ -11,6 +11,15 @@ import db from "../db.server";
 const ADMIN_COOKIE = "mdh_admin_session";
 const ACTIVATION_DAYS = 7;
 
+// ======================================================
+// MEAL DEAL HUB BRAND COLOURS
+// ======================================================
+
+const BLACK = "#111111";
+const YELLOW = "#FFD400";
+const WHITE = "#FFFFFF";
+const GREY = "#666666";
+
 function getAdminSecret() {
   return (
     process.env.ADMIN_SESSION_SECRET ||
@@ -75,6 +84,10 @@ function verifyAdminSession(request) {
   }
 }
 
+// ======================================================
+// LOAD RESTAURANTS
+// ======================================================
+
 export async function loader({ request }) {
   if (!verifyAdminSession(request)) {
     throw redirect("/admin/login");
@@ -112,6 +125,10 @@ export async function loader({ request }) {
   };
 }
 
+// ======================================================
+// RESTAURANT MANAGEMENT ACTIONS
+// ======================================================
+
 export async function action({ request }) {
   if (!verifyAdminSession(request)) {
     throw redirect("/admin/login");
@@ -123,11 +140,9 @@ export async function action({ request }) {
     formData.get("intent") || "create-restaurant",
   );
 
-  /*
-  ======================================================
-  ADMIN LOGOUT
-  ======================================================
-  */
+  // ====================================================
+  // ADMIN LOGOUT
+  // ====================================================
 
   if (intent === "logout") {
     throw redirect("/admin/login", {
@@ -148,19 +163,12 @@ export async function action({ request }) {
     });
   }
 
-  /*
-  ======================================================
-  EDIT RESTAURANT DETAILS
-  ======================================================
-
-  Only activated restaurant accounts can be edited.
-
-  The unique Restaurant ID is never changed.
-
-  Restaurant name and the selected login email are
-  updated together inside a database transaction.
-  ======================================================
-  */
+  // ====================================================
+  // EDIT RESTAURANT DETAILS
+  //
+  // Admin can edit activated and non-activated accounts.
+  // Restaurant ID cannot be changed.
+  // ====================================================
 
   if (intent === "edit-restaurant") {
     const restaurantDbId = Number(
@@ -244,10 +252,10 @@ export async function action({ request }) {
     const restaurantUser = restaurant.users[0];
 
     if (!restaurantUser) {
-  return {
-    error: "Restaurant account could not be found.",
-  };
-}
+      return {
+        error: "Restaurant account could not be found.",
+      };
+    }
 
     const existingUser =
       await db.restaurantUser.findUnique({
@@ -307,11 +315,9 @@ export async function action({ request }) {
     }
   }
 
-  /*
-  ======================================================
-  DEACTIVATE RESTAURANT
-  ======================================================
-  */
+  // ====================================================
+  // DEACTIVATE RESTAURANT
+  // ====================================================
 
   if (intent === "deactivate-restaurant") {
     const restaurantDbId = Number(
@@ -368,11 +374,9 @@ export async function action({ request }) {
     };
   }
 
-  /*
-  ======================================================
-  REACTIVATE RESTAURANT
-  ======================================================
-  */
+  // ====================================================
+  // REACTIVATE RESTAURANT
+  // ====================================================
 
   if (intent === "reactivate-restaurant") {
     const restaurantDbId = Number(
@@ -429,11 +433,9 @@ export async function action({ request }) {
     };
   }
 
-  /*
-  ======================================================
-  CREATE RESTAURANT
-  ======================================================
-  */
+  // ====================================================
+  // CREATE RESTAURANT
+  // ====================================================
 
   const name = String(
     formData.get("name") || "",
@@ -481,7 +483,7 @@ export async function action({ request }) {
     return {
       error:
         "That email address already has a restaurant account.",
-    };
+      };
   }
 
   const activationToken = crypto
@@ -535,6 +537,10 @@ export async function action({ request }) {
   };
 }
 
+// ======================================================
+// ADMIN RESTAURANT MANAGEMENT PAGE
+// ======================================================
+
 export default function AdminRestaurants() {
   const actionData = useActionData();
   const loaderData = useLoaderData();
@@ -556,6 +562,8 @@ export default function AdminRestaurants() {
   return (
     <main style={styles.page}>
       <div style={styles.container}>
+        {/* BLACK HEADER WITH YELLOW BRAND TEXT */}
+
         <div style={styles.topBar}>
           <div style={styles.brand}>
             MEAL DEAL HUB
@@ -577,14 +585,16 @@ export default function AdminRestaurants() {
           </Form>
         </div>
 
-        <h1 style={styles.heading}>
-          Restaurant Management
-        </h1>
+        <div style={styles.headingSection}>
+          <h1 style={styles.heading}>
+            Restaurant Management
+          </h1>
 
-        <p style={styles.intro}>
-          Create and manage Meal Deal Hub
-          restaurant accounts.
-        </p>
+          <p style={styles.intro}>
+            Create and manage Meal Deal Hub
+            restaurant accounts.
+          </p>
+        </div>
 
         {actionData?.error && (
           <div style={styles.error}>
@@ -634,63 +644,71 @@ export default function AdminRestaurants() {
           </div>
         )}
 
+        {/* ADD RESTAURANT */}
+
         <section style={styles.card}>
-          <h2 style={styles.sectionTitle}>
-            Add Restaurant
-          </h2>
+          <div style={styles.sectionTitleBar}>
+            <h2 style={styles.sectionTitle}>
+              Add Restaurant
+            </h2>
+          </div>
 
-          <Form method="post">
-            <input
-              type="hidden"
-              name="intent"
-              value="create-restaurant"
-            />
+          <div style={styles.cardContent}>
+            <Form method="post">
+              <input
+                type="hidden"
+                name="intent"
+                value="create-restaurant"
+              />
 
-            <label style={styles.label}>
-              Restaurant name
-            </label>
+              <label style={styles.label}>
+                Restaurant name
+              </label>
 
-            <input
-              type="text"
-              name="name"
-              placeholder="e.g. Peters Restaurant"
-              required
-              style={styles.input}
-            />
+              <input
+                type="text"
+                name="name"
+                placeholder="e.g. Peters Restaurant"
+                required
+                style={styles.input}
+              />
 
-            <label style={styles.label}>
-              Restaurant ID
-            </label>
+              <label style={styles.label}>
+                Restaurant ID
+              </label>
 
-            <input
-              type="text"
-              name="restaurantId"
-              placeholder="e.g. PETERS 1"
-              required
-              style={styles.input}
-            />
+              <input
+                type="text"
+                name="restaurantId"
+                placeholder="e.g. PETERS 1"
+                required
+                style={styles.input}
+              />
 
-            <label style={styles.label}>
-              Restaurant email
-            </label>
+              <label style={styles.label}>
+                Restaurant email
+              </label>
 
-            <input
-              type="email"
-              name="email"
-              placeholder="restaurant@example.com"
-              autoComplete="email"
-              required
-              style={styles.input}
-            />
+              <input
+                type="email"
+                name="email"
+                placeholder="restaurant@example.com"
+                autoComplete="email"
+                required
+                style={styles.input}
+              />
 
-            <button
-              type="submit"
-              style={styles.button}
-            >
-              CREATE RESTAURANT ACCOUNT
-            </button>
-          </Form>
+              <button
+                type="submit"
+                style={styles.button}
+              >
+                CREATE RESTAURANT ACCOUNT
+              </button>
+            </Form>
+          </div>
         </section>
+
+        {/* EXISTING RESTAURANTS */}
 
         <section style={styles.restaurantSection}>
           <div style={styles.restaurantHeader}>
@@ -803,6 +821,8 @@ export default function AdminRestaurants() {
                       </div>
                     </div>
 
+                    {/* EDIT DETAILS BUTTON */}
+
                     {canEdit && (
                       <div style={styles.editAction}>
                         <button
@@ -822,6 +842,8 @@ export default function AdminRestaurants() {
                         </button>
                       </div>
                     )}
+
+                    {/* EDIT RESTAURANT FORM */}
 
                     {canEdit && isEditing && (
                       <div style={styles.editPanel}>
@@ -906,6 +928,8 @@ export default function AdminRestaurants() {
                       </div>
                     )}
 
+                    {/* ACTIVATE / DEACTIVATE */}
+
                     <div style={styles.actions}>
                       <Form
                         method="post"
@@ -967,13 +991,17 @@ export default function AdminRestaurants() {
   );
 }
 
+// ======================================================
+// BLACK / YELLOW / WHITE STYLING
+// ======================================================
+
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#f4f4f4",
+    background: "#F5F5F5",
     fontFamily: "Arial, Helvetica, sans-serif",
     padding: 24,
-    color: "#171717",
+    color: BLACK,
   },
 
   container: {
@@ -987,76 +1015,99 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: 20,
-    marginBottom: 8,
+    marginBottom: 20,
+    background: BLACK,
+    borderRadius: 14,
+    padding: "20px 24px",
   },
 
   brand: {
-    color: "#f05a28",
-    fontSize: 15,
+    color: YELLOW,
+    fontSize: 22,
     fontWeight: 900,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
 
   logoutButton: {
-    background: "#171717",
-    color: "#ffffff",
+    background: YELLOW,
+    color: BLACK,
     border: 0,
     borderRadius: 8,
-    padding: "10px 16px",
+    padding: "11px 18px",
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
   },
 
+  headingSection: {
+    marginBottom: 25,
+  },
+
   heading: {
     fontSize: 34,
     margin: "0 0 8px",
+    fontWeight: 900,
+    color: BLACK,
   },
 
   intro: {
-    color: "#666",
-    margin: "0 0 25px",
+    color: GREY,
+    margin: 0,
   },
 
   sectionTitle: {
     fontSize: 22,
     margin: "0 0 8px",
+    fontWeight: 900,
+    color: BLACK,
   },
 
   sectionIntro: {
-    color: "#666",
+    color: GREY,
     fontSize: 14,
     margin: 0,
   },
 
   card: {
-    background: "#ffffff",
-    border: "1px solid #ddd",
+    background: WHITE,
+    border: "1px solid #E2E2E2",
     borderRadius: 16,
+    overflow: "hidden",
+  },
+
+  sectionTitleBar: {
+    background: YELLOW,
+    padding: "18px 24px 12px",
+  },
+
+  cardContent: {
     padding: 28,
   },
 
   label: {
     display: "block",
-    fontWeight: 700,
+    fontWeight: 800,
     marginBottom: 7,
+    color: BLACK,
   },
 
   input: {
     width: "100%",
     boxSizing: "border-box",
     padding: 14,
-    border: "1px solid #bbb",
+    border: "1px solid #BDBDBD",
     borderRadius: 8,
     fontSize: 16,
     marginBottom: 20,
+    background: WHITE,
+    color: BLACK,
   },
 
   button: {
     width: "100%",
-    background: "#f05a28",
-    color: "#ffffff",
-    border: 0,
+    background: YELLOW,
+    color: BLACK,
+    border: "2px solid " + BLACK,
     borderRadius: 9,
     padding: 16,
     fontSize: 16,
@@ -1070,6 +1121,8 @@ const styles = {
 
   restaurantHeader: {
     marginBottom: 14,
+    paddingBottom: 12,
+    borderBottom: "4px solid " + YELLOW,
   },
 
   restaurantList: {
@@ -1078,14 +1131,15 @@ const styles = {
   },
 
   restaurantCard: {
-    background: "#ffffff",
-    border: "1px solid #ddd",
+    background: WHITE,
+    border: "1px solid #E0E0E0",
     borderRadius: 14,
     padding: 20,
+    borderLeft: "5px solid " + YELLOW,
   },
 
   restaurantCardInactive: {
-    background: "#f8f8f8",
+    background: "#F8F8F8",
     opacity: 0.85,
   },
 
@@ -1101,18 +1155,19 @@ const styles = {
     fontSize: 19,
     fontWeight: 900,
     marginBottom: 5,
+    color: BLACK,
   },
 
   restaurantId: {
-    color: "#666",
+    color: GREY,
     fontSize: 13,
     fontWeight: 700,
   },
 
   activeBadge: {
-    background: "#e7f6ec",
-    color: "#137333",
-    border: "1px solid #a9d9b8",
+    background: YELLOW,
+    color: BLACK,
+    border: "1px solid " + BLACK,
     borderRadius: 999,
     padding: "6px 10px",
     fontSize: 11,
@@ -1121,9 +1176,9 @@ const styles = {
   },
 
   inactiveBadge: {
-    background: "#f2f2f2",
-    color: "#666",
-    border: "1px solid #ccc",
+    background: "#EAEAEA",
+    color: "#555555",
+    border: "1px solid #CCCCCC",
     borderRadius: 999,
     padding: "6px 10px",
     fontSize: 11,
@@ -1141,7 +1196,7 @@ const styles = {
 
   detailLabel: {
     display: "block",
-    color: "#777",
+    color: GREY,
     fontSize: 11,
     fontWeight: 900,
     textTransform: "uppercase",
@@ -1149,16 +1204,16 @@ const styles = {
   },
 
   actions: {
-    borderTop: "1px solid #eee",
+    borderTop: "1px solid #EEEEEE",
     marginTop: 20,
     paddingTop: 18,
   },
 
   deactivateButton: {
     width: "100%",
-    background: "#ffffff",
-    color: "#b42318",
-    border: "2px solid #b42318",
+    background: WHITE,
+    color: BLACK,
+    border: "2px solid " + BLACK,
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1168,9 +1223,9 @@ const styles = {
 
   reactivateButton: {
     width: "100%",
-    background: "#137333",
-    color: "#ffffff",
-    border: "2px solid #137333",
+    background: YELLOW,
+    color: BLACK,
+    border: "2px solid " + BLACK,
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1179,35 +1234,35 @@ const styles = {
   },
 
   empty: {
-    background: "#ffffff",
-    border: "1px solid #ddd",
+    background: WHITE,
+    border: "1px solid #DDDDDD",
     borderRadius: 14,
     padding: 24,
-    color: "#666",
+    color: GREY,
     textAlign: "center",
   },
 
   error: {
-    background: "#fff0f0",
-    border: "1px solid #d72c0d",
-    color: "#8e1f0b",
+    background: "#FFF0F0",
+    border: "1px solid #D72C0D",
+    color: "#8E1F0B",
     padding: 14,
     borderRadius: 10,
     marginBottom: 20,
   },
 
   success: {
-    background: "#ffffff",
-    border: "2px solid #137333",
+    background: WHITE,
+    border: "2px solid " + YELLOW,
     borderRadius: 16,
     padding: 24,
     marginBottom: 20,
   },
 
   managementSuccess: {
-    background: "#e7f6ec",
-    border: "1px solid #a9d9b8",
-    color: "#137333",
+    background: "#FFF9CC",
+    border: "1px solid " + YELLOW,
+    color: BLACK,
     borderRadius: 10,
     padding: 14,
     marginBottom: 20,
@@ -1215,7 +1270,7 @@ const styles = {
   },
 
   successTitle: {
-    color: "#137333",
+    color: BLACK,
     fontSize: 19,
     fontWeight: 900,
     marginBottom: 15,
@@ -1229,12 +1284,13 @@ const styles = {
   linkLabel: {
     fontSize: 12,
     fontWeight: 900,
-    color: "#666",
+    color: BLACK,
     marginBottom: 6,
   },
 
   activationLink: {
-    background: "#f4f4f4",
+    background: "#FFF9CC",
+    border: "1px solid " + YELLOW,
     padding: 12,
     borderRadius: 8,
     overflowWrap: "anywhere",
@@ -1242,13 +1298,14 @@ const styles = {
   },
 
   note: {
-    color: "#666",
+    color: GREY,
     fontSize: 13,
     marginBottom: 0,
   },
 
   security: {
-    background: "#fff4ef",
+    background: "#FFF9CC",
+    border: "1px solid " + YELLOW,
     borderRadius: 10,
     padding: 16,
     marginTop: 18,
@@ -1256,11 +1313,9 @@ const styles = {
     lineHeight: 1.5,
   },
 
-  /*
-  ======================================================
-  NEW EDIT DETAILS STYLES
-  ======================================================
-  */
+  // ====================================================
+  // EDIT DETAILS STYLING
+  // ====================================================
 
   editAction: {
     marginTop: 18,
@@ -1268,9 +1323,9 @@ const styles = {
 
   editButton: {
     width: "100%",
-    background: "#171717",
-    color: "#ffffff",
-    border: 0,
+    background: BLACK,
+    color: YELLOW,
+    border: "2px solid " + BLACK,
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1279,8 +1334,8 @@ const styles = {
   },
 
   editPanel: {
-    background: "#f8f8f8",
-    border: "1px solid #ddd",
+    background: "#FAFAFA",
+    border: "2px solid " + YELLOW,
     borderRadius: 12,
     padding: 20,
     marginTop: 15,
@@ -1289,10 +1344,12 @@ const styles = {
   editHeading: {
     fontSize: 20,
     margin: "0 0 8px",
+    color: BLACK,
+    fontWeight: 900,
   },
 
   editDescription: {
-    color: "#666",
+    color: GREY,
     fontSize: 14,
     margin: "0 0 20px",
   },
@@ -1301,26 +1358,26 @@ const styles = {
     width: "100%",
     boxSizing: "border-box",
     padding: 14,
-    border: "1px solid #ddd",
+    border: "1px solid #DDDDDD",
     borderRadius: 8,
     fontSize: 16,
     marginBottom: 8,
-    background: "#eeeeee",
-    color: "#666",
+    background: "#EEEEEE",
+    color: GREY,
     cursor: "not-allowed",
   },
 
   editNote: {
-    color: "#666",
+    color: GREY,
     fontSize: 12,
     margin: "0 0 20px",
   },
 
   saveButton: {
     width: "100%",
-    background: "#171717",
-    color: "#ffffff",
-    border: 0,
+    background: YELLOW,
+    color: BLACK,
+    border: "2px solid " + BLACK,
     borderRadius: 9,
     padding: 15,
     fontSize: 15,
