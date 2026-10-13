@@ -4,6 +4,7 @@ import {
   useActionData,
   useLoaderData,
 } from "react-router";
+import { useEffect, useState } from "react";
 import crypto from "node:crypto";
 import db from "../db.server";
 
@@ -40,39 +41,27 @@ function verifyAdminSession(request) {
       }),
   );
 
-  const session =
-    cookies[ADMIN_COOKIE];
+  const session = cookies[ADMIN_COOKIE];
 
   if (!session) {
     return false;
   }
 
-  const separator =
-    session.lastIndexOf(".");
+  const separator = session.lastIndexOf(".");
 
   if (separator === -1) {
     return false;
   }
 
-  const value =
-    session.slice(0, separator);
+  const value = session.slice(0, separator);
+  const signature = session.slice(separator + 1);
 
-  const signature =
-    session.slice(separator + 1);
+  const expectedSignature = crypto
+    .createHmac("sha256", getAdminSecret())
+    .update(value)
+    .digest("hex");
 
-  const expectedSignature =
-    crypto
-      .createHmac(
-        "sha256",
-        getAdminSecret(),
-      )
-      .update(value)
-      .digest("hex");
-
-  if (
-    signature.length !==
-    expectedSignature.length
-  ) {
+  if (signature.length !== expectedSignature.length) {
     return false;
   }
 
@@ -86,66 +75,53 @@ function verifyAdminSession(request) {
   }
 }
 
-export async function loader({
-  request,
-}) {
-  if (
-    !verifyAdminSession(request)
-  ) {
-    throw redirect(
-      "/admin/login",
-    );
+export async function loader({ request }) {
+  if (!verifyAdminSession(request)) {
+    throw redirect("/admin/login");
   }
 
-  const restaurants =
-    await db.restaurant.findMany({
-      orderBy: {
-        name: "asc",
-      },
+  const restaurants = await db.restaurant.findMany({
+    orderBy: {
+      name: "asc",
+    },
 
-      include: {
-        users: {
-          select: {
-            id: true,
-            email: true,
-            active: true,
-            activated: true,
-          },
+    include: {
+      users: {
+        select: {
+          id: true,
+          email: true,
+          active: true,
+          activated: true,
         },
-
-        _count: {
-          select: {
-            orderDecisions: true,
-            payouts: true,
-          },
+        orderBy: {
+          id: "asc",
         },
       },
-    });
+
+      _count: {
+        select: {
+          orderDecisions: true,
+          payouts: true,
+        },
+      },
+    },
+  });
 
   return {
     restaurants,
   };
 }
 
-export async function action({
-  request,
-}) {
-  if (
-    !verifyAdminSession(request)
-  ) {
-    throw redirect(
-      "/admin/login",
-    );
+export async function action({ request }) {
+  if (!verifyAdminSession(request)) {
+    throw redirect("/admin/login");
   }
 
-  const formData =
-    await request.formData();
+  const formData = await request.formData();
 
-  const intent =
-    String(
-      formData.get("intent") ||
-        "create-restaurant",
-    );
+  const intent = String(
+    formData.get("intent") || "create-restaurant",
+  );
 
   /*
   ======================================================
@@ -174,44 +150,193 @@ export async function action({
 
   /*
   ======================================================
+  EDIT RESTAURANT DETAILS
+  ======================================================
+
+  Only activated restaurant accounts can be edited.
+
+  The unique Restaurant ID is never changed.
+
+  Restaurant name and the selected login email are
+  updated together inside a database transaction.
+  ======================================================
+  */
+
+  if (intent === "edit-restaurant") {
+    const restaurantDbId = Number(
+      formData.get("restaurantDbId"),
+    );
+
+    const restaurantUserId = Number(
+      formData.get("restaurantUserId"),
+    );
+
+    const name = String(
+      formData.get("name") || "",
+    ).trim();
+
+    const email = String(
+      formData.get("email") || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    if (
+      !Number.isInteger(restaurantDbId) ||
+      restaurantDbId <= 0 ||
+      !Number.isInteger(restaurantUserId) ||
+      restaurantUserId <= 0
+    ) {
+      return {
+        error: "Restaurant information is missing.",
+      };
+    }
+
+    if (!name || !email) {
+      return {
+        error:
+          "Please enter the restaurant name and email address.",
+      };
+    }
+
+    if (name.length > 150) {
+      return {
+        error:
+          "Restaurant name must be 150 characters or fewer.",
+      };
+    }
+
+    if (
+      email.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    ) {
+      return {
+        error: "Please enter a valid email address.",
+      };
+    }
+
+    const restaurant = await db.restaurant.findUnique({
+      where: {
+        id: restaurantDbId,
+      },
+
+      include: {
+        users: {
+          where: {
+            id: restaurantUserId,
+          },
+
+          select: {
+            id: true,
+            email: true,
+            activated: true,
+          },
+        },
+      },
+    });
+
+    if (!restaurant) {
+      return {
+        error: "Restaurant could not be found.",
+      };
+    }
+
+    const restaurantUser = restaurant.users[0];
+
+    if (!restaurantUser || !restaurantUser.activated) {
+      return {
+        error:
+          "Restaurant details can only be edited after the account has been activated.",
+      };
+    }
+
+    const existingUser =
+      await db.restaurantUser.findUnique({
+        where: {
+          email,
+        },
+      });
+
+    if (
+      existingUser &&
+      existingUser.id !== restaurantUserId
+    ) {
+      return {
+        error:
+          "That email address is already being used by another restaurant account.",
+      };
+    }
+
+    try {
+      await db.$transaction([
+        db.restaurant.update({
+          where: {
+            id: restaurantDbId,
+          },
+
+          data: {
+            name,
+          },
+        }),
+
+        db.restaurantUser.update({
+          where: {
+            id: restaurantUserId,
+          },
+
+          data: {
+            email,
+          },
+        }),
+      ]);
+
+      return {
+        managementSuccess: true,
+        message: `${name}'s details have been updated successfully.`,
+        editedRestaurantId: restaurantDbId,
+      };
+    } catch (error) {
+      console.error(
+        "EDIT RESTAURANT FAILED:",
+        error,
+      );
+
+      return {
+        error:
+          "Restaurant details could not be saved. Please check that the email address is not already in use.",
+      };
+    }
+  }
+
+  /*
+  ======================================================
   DEACTIVATE RESTAURANT
   ======================================================
   */
 
-  if (
-    intent ===
-    "deactivate-restaurant"
-  ) {
-    const restaurantDbId =
-      Number(
-        formData.get(
-          "restaurantDbId",
-        ),
-      );
+  if (intent === "deactivate-restaurant") {
+    const restaurantDbId = Number(
+      formData.get("restaurantDbId"),
+    );
 
     if (
-      !Number.isInteger(
-        restaurantDbId,
-      ) ||
+      !Number.isInteger(restaurantDbId) ||
       restaurantDbId <= 0
     ) {
       return {
-        error:
-          "Restaurant information is missing.",
+        error: "Restaurant information is missing.",
       };
     }
 
-    const restaurant =
-      await db.restaurant.findUnique({
-        where: {
-          id: restaurantDbId,
-        },
-      });
+    const restaurant = await db.restaurant.findUnique({
+      where: {
+        id: restaurantDbId,
+      },
+    });
 
     if (!restaurant) {
       return {
-        error:
-          "Restaurant could not be found.",
+        error: "Restaurant could not be found.",
       };
     }
 
@@ -229,8 +354,7 @@ export async function action({
 
       db.restaurantUser.updateMany({
         where: {
-          restaurantId:
-            restaurantDbId,
+          restaurantId: restaurantDbId,
         },
 
         data: {
@@ -241,9 +365,7 @@ export async function action({
 
     return {
       managementSuccess: true,
-
-      message:
-        `${restaurant.name} has been deactivated.`,
+      message: `${restaurant.name} has been deactivated.`,
     };
   }
 
@@ -253,40 +375,29 @@ export async function action({
   ======================================================
   */
 
-  if (
-    intent ===
-    "reactivate-restaurant"
-  ) {
-    const restaurantDbId =
-      Number(
-        formData.get(
-          "restaurantDbId",
-        ),
-      );
+  if (intent === "reactivate-restaurant") {
+    const restaurantDbId = Number(
+      formData.get("restaurantDbId"),
+    );
 
     if (
-      !Number.isInteger(
-        restaurantDbId,
-      ) ||
+      !Number.isInteger(restaurantDbId) ||
       restaurantDbId <= 0
     ) {
       return {
-        error:
-          "Restaurant information is missing.",
+        error: "Restaurant information is missing.",
       };
     }
 
-    const restaurant =
-      await db.restaurant.findUnique({
-        where: {
-          id: restaurantDbId,
-        },
-      });
+    const restaurant = await db.restaurant.findUnique({
+      where: {
+        id: restaurantDbId,
+      },
+    });
 
     if (!restaurant) {
       return {
-        error:
-          "Restaurant could not be found.",
+        error: "Restaurant could not be found.",
       };
     }
 
@@ -304,8 +415,7 @@ export async function action({
 
       db.restaurantUser.updateMany({
         where: {
-          restaurantId:
-            restaurantDbId,
+          restaurantId: restaurantDbId,
         },
 
         data: {
@@ -316,9 +426,7 @@ export async function action({
 
     return {
       managementSuccess: true,
-
-      message:
-        `${restaurant.name} has been reactivated.`,
+      message: `${restaurant.name} has been reactivated.`,
     };
   }
 
@@ -342,11 +450,7 @@ export async function action({
     .trim()
     .toLowerCase();
 
-  if (
-    !name ||
-    !restaurantId ||
-    !email
-  ) {
+  if (!name || !restaurantId || !email) {
     return {
       error:
         "Please enter the restaurant name, Restaurant ID and email address.",
@@ -381,87 +485,78 @@ export async function action({
     };
   }
 
-  const activationToken =
-    crypto
-      .randomBytes(32)
-      .toString("hex");
+  const activationToken = crypto
+    .randomBytes(32)
+    .toString("hex");
 
-  const activationExpiry =
-    new Date(
-      Date.now() +
-        ACTIVATION_DAYS *
-          24 *
-          60 *
-          60 *
-          1000,
-    );
+  const activationExpiry = new Date(
+    Date.now() +
+      ACTIVATION_DAYS * 24 * 60 * 60 * 1000,
+  );
 
-  const temporaryPasswordHash =
-    crypto
-      .randomBytes(48)
-      .toString("hex");
+  const temporaryPasswordHash = crypto
+    .randomBytes(48)
+    .toString("hex");
 
-  const restaurant =
-    await db.restaurant.create({
-      data: {
-        name,
-        restaurantId,
-        active: true,
-        acceptingOrders: true,
+  const restaurant = await db.restaurant.create({
+    data: {
+      name,
+      restaurantId,
+      active: true,
+      acceptingOrders: true,
 
-        users: {
-          create: {
-            email,
-            passwordHash:
-              temporaryPasswordHash,
-            active: true,
-            activated: false,
-            activationToken,
-            activationExpiry,
-          },
+      users: {
+        create: {
+          email,
+          passwordHash: temporaryPasswordHash,
+          active: true,
+          activated: false,
+          activationToken,
+          activationExpiry,
         },
       },
+    },
 
-      include: {
-        users: true,
-      },
-    });
+    include: {
+      users: true,
+    },
+  });
 
-  const url =
-    new URL(request.url);
+  const url = new URL(request.url);
 
   const activationLink =
     `${url.origin}/restaurant/activate?token=${activationToken}`;
 
   return {
     success: true,
-
-    restaurantName:
-      restaurant.name,
-
-    restaurantId:
-      restaurant.restaurantId,
-
+    restaurantName: restaurant.name,
+    restaurantId: restaurant.restaurantId,
     email,
-
     activationLink,
   };
 }
 
 export default function AdminRestaurants() {
-  const actionData =
-    useActionData();
+  const actionData = useActionData();
+  const loaderData = useLoaderData();
 
-  const loaderData =
-    useLoaderData();
+  const restaurants = loaderData?.restaurants || [];
 
-  const restaurants =
-    loaderData?.restaurants || [];
+  const [editingRestaurantId, setEditingRestaurantId] =
+    useState(null);
+
+  useEffect(() => {
+    if (
+      actionData?.managementSuccess &&
+      actionData?.editedRestaurantId
+    ) {
+      setEditingRestaurantId(null);
+    }
+  }, [actionData]);
 
   return (
     <main style={styles.page}>
       <div style={styles.container}>
-
         <div style={styles.topBar}>
           <div style={styles.brand}>
             MEAL DEAL HUB
@@ -499,68 +594,43 @@ export default function AdminRestaurants() {
         )}
 
         {actionData?.managementSuccess && (
-          <div
-            style={
-              styles.managementSuccess
-            }
-          >
+          <div style={styles.managementSuccess}>
             ✓ {actionData.message}
           </div>
         )}
 
         {actionData?.success && (
           <div style={styles.success}>
-            <div
-              style={
-                styles.successTitle
-              }
-            >
-              ✓ Restaurant account
-              created
+            <div style={styles.successTitle}>
+              ✓ Restaurant account created
             </div>
 
             <div style={styles.details}>
               <strong>
-                {
-                  actionData.restaurantName
-                }
+                {actionData.restaurantName}
               </strong>
 
               <div>
                 Restaurant ID:{" "}
-                {
-                  actionData.restaurantId
-                }
+                {actionData.restaurantId}
               </div>
 
               <div>
-                Email:{" "}
-                {actionData.email}
+                Email: {actionData.email}
               </div>
             </div>
 
-            <div
-              style={
-                styles.linkLabel
-              }
-            >
+            <div style={styles.linkLabel}>
               ACTIVATION LINK
             </div>
 
-            <div
-              style={
-                styles.activationLink
-              }
-            >
-              {
-                actionData.activationLink
-              }
+            <div style={styles.activationLink}>
+              {actionData.activationLink}
             </div>
 
             <p style={styles.note}>
-              Send this link to the
-              restaurant. It expires
-              after 7 days.
+              Send this link to the restaurant.
+              It expires after 7 days.
             </p>
           </div>
         )}
@@ -623,251 +693,277 @@ export default function AdminRestaurants() {
           </Form>
         </section>
 
-        <section
-          style={
-            styles.restaurantSection
-          }
-        >
-          <div
-            style={
-              styles.restaurantHeader
-            }
-          >
-            <h2
-              style={
-                styles.sectionTitle
-              }
-            >
+        <section style={styles.restaurantSection}>
+          <div style={styles.restaurantHeader}>
+            <h2 style={styles.sectionTitle}>
               Existing Restaurants
             </h2>
 
-            <p
-              style={
-                styles.sectionIntro
-              }
-            >
+            <p style={styles.sectionIntro}>
               {restaurants.length}{" "}
               restaurant
-              {restaurants.length === 1
-                ? ""
-                : "s"}{" "}
+              {restaurants.length === 1 ? "" : "s"}{" "}
               registered.
             </p>
           </div>
 
           {restaurants.length === 0 ? (
             <div style={styles.empty}>
-              No restaurants have been
-              created yet.
+              No restaurants have been created yet.
             </div>
           ) : (
-            <div
-              style={
-                styles.restaurantList
-              }
-            >
-              {restaurants.map(
-                (restaurant) => {
-                  const primaryUser =
-                    restaurant
-                      .users?.[0];
+            <div style={styles.restaurantList}>
+              {restaurants.map((restaurant) => {
+                const primaryUser =
+                  restaurant.users?.[0];
 
-                  return (
-                    <div
-                      key={
-                        restaurant.id
-                      }
-                      style={
-                        restaurant.active
-                          ? styles.restaurantCard
-                          : {
-                              ...styles.restaurantCard,
-                              ...styles.restaurantCardInactive,
-                            }
-                      }
-                    >
-                      <div
-                        style={
-                          styles.restaurantTop
-                        }
-                      >
-                        <div>
-                          <div
-                            style={
-                              styles.restaurantName
-                            }
-                          >
-                            {
-                              restaurant.name
-                            }
-                          </div>
+                const canEdit =
+                  restaurant.active &&
+                  primaryUser?.activated === true;
 
-                          <div
-                            style={
-                              styles.restaurantId
-                            }
-                          >
-                            ID:{" "}
-                            {
-                              restaurant.restaurantId
-                            }
-                          </div>
+                const isEditing =
+                  editingRestaurantId === restaurant.id;
+
+                return (
+                  <div
+                    key={restaurant.id}
+                    style={
+                      restaurant.active
+                        ? styles.restaurantCard
+                        : {
+                            ...styles.restaurantCard,
+                            ...styles.restaurantCardInactive,
+                          }
+                    }
+                  >
+                    <div style={styles.restaurantTop}>
+                      <div>
+                        <div style={styles.restaurantName}>
+                          {restaurant.name}
                         </div>
 
-                        <div
-                          style={
-                            restaurant.active
-                              ? styles.activeBadge
-                              : styles.inactiveBadge
+                        <div style={styles.restaurantId}>
+                          ID: {restaurant.restaurantId}
+                        </div>
+                      </div>
+
+                      <div
+                        style={
+                          restaurant.active
+                            ? styles.activeBadge
+                            : styles.inactiveBadge
+                        }
+                      >
+                        {restaurant.active
+                          ? "ACTIVE"
+                          : "DEACTIVATED"}
+                      </div>
+                    </div>
+
+                    <div style={styles.restaurantDetails}>
+                      <div>
+                        <span style={styles.detailLabel}>
+                          Email
+                        </span>
+
+                        <span>
+                          {primaryUser?.email || "No email"}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span style={styles.detailLabel}>
+                          Account
+                        </span>
+
+                        <span>
+                          {primaryUser?.activated
+                            ? "Activated"
+                            : "Not activated"}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span style={styles.detailLabel}>
+                          Orders
+                        </span>
+
+                        <span>
+                          {restaurant._count.orderDecisions}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span style={styles.detailLabel}>
+                          Accepting orders
+                        </span>
+
+                        <span>
+                          {restaurant.acceptingOrders
+                            ? "Yes"
+                            : "No"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {canEdit && (
+                      <div style={styles.editAction}>
+                        <button
+                          type="button"
+                          style={styles.editButton}
+                          onClick={() =>
+                            setEditingRestaurantId(
+                              isEditing
+                                ? null
+                                : restaurant.id,
+                            )
                           }
                         >
-                          {restaurant.active
-                            ? "ACTIVE"
-                            : "DEACTIVATED"}
-                        </div>
+                          {isEditing
+                            ? "CANCEL EDIT"
+                            : "EDIT DETAILS"}
+                        </button>
                       </div>
+                    )}
 
-                      <div
-                        style={
-                          styles.restaurantDetails
-                        }
-                      >
-                        <div>
-                          <span
-                            style={
-                              styles.detailLabel
-                            }
-                          >
-                            Email
-                          </span>
+                    {canEdit && isEditing && (
+                      <div style={styles.editPanel}>
+                        <h3 style={styles.editHeading}>
+                          Edit Restaurant Details
+                        </h3>
 
-                          <span>
-                            {primaryUser?.email ||
-                              "No email"}
-                          </span>
-                        </div>
+                        <p style={styles.editDescription}>
+                          Update this restaurant's name
+                          and login email.
+                        </p>
 
-                        <div>
-                          <span
-                            style={
-                              styles.detailLabel
-                            }
-                          >
-                            Account
-                          </span>
-
-                          <span>
-                            {primaryUser?.activated
-                              ? "Activated"
-                              : "Not activated"}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span
-                            style={
-                              styles.detailLabel
-                            }
-                          >
-                            Orders
-                          </span>
-
-                          <span>
-                            {
-                              restaurant
-                                ._count
-                                .orderDecisions
-                            }
-                          </span>
-                        </div>
-
-                        <div>
-                          <span
-                            style={
-                              styles.detailLabel
-                            }
-                          >
-                            Accepting orders
-                          </span>
-
-                          <span>
-                            {restaurant.acceptingOrders
-                              ? "Yes"
-                              : "No"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div
-                        style={
-                          styles.actions
-                        }
-                      >
-                        <Form
-                          method="post"
-                          onSubmit={(
-                            event,
-                          ) => {
-                            const message =
-                              restaurant.active
-                                ? `Deactivate ${restaurant.name}? They will no longer be able to receive orders or access their restaurant account.`
-                                : `Reactivate ${restaurant.name}? Their restaurant account and ordering access will be restored.`;
-
-                            if (
-                              !window.confirm(
-                                message,
-                              )
-                            ) {
-                              event.preventDefault();
-                            }
-                          }}
-                        >
-                          <input
-                            type="hidden"
-                            name="restaurantDbId"
-                            value={
-                              restaurant.id
-                            }
-                          />
-
+                        <Form method="post">
                           <input
                             type="hidden"
                             name="intent"
-                            value={
-                              restaurant.active
-                                ? "deactivate-restaurant"
-                                : "reactivate-restaurant"
-                            }
+                            value="edit-restaurant"
                           />
+
+                          <input
+                            type="hidden"
+                            name="restaurantDbId"
+                            value={restaurant.id}
+                          />
+
+                          <input
+                            type="hidden"
+                            name="restaurantUserId"
+                            value={primaryUser.id}
+                          />
+
+                          <label style={styles.label}>
+                            Restaurant name
+                          </label>
+
+                          <input
+                            type="text"
+                            name="name"
+                            defaultValue={restaurant.name}
+                            maxLength={150}
+                            required
+                            style={styles.input}
+                          />
+
+                          <label style={styles.label}>
+                            Restaurant email
+                          </label>
+
+                          <input
+                            type="email"
+                            name="email"
+                            defaultValue={primaryUser.email}
+                            autoComplete="email"
+                            maxLength={254}
+                            required
+                            style={styles.input}
+                          />
+
+                          <label style={styles.label}>
+                            Restaurant ID
+                          </label>
+
+                          <input
+                            type="text"
+                            value={restaurant.restaurantId}
+                            disabled
+                            readOnly
+                            style={styles.readOnlyInput}
+                          />
+
+                          <p style={styles.editNote}>
+                            The Restaurant ID cannot be changed.
+                          </p>
 
                           <button
                             type="submit"
-                            style={
-                              restaurant.active
-                                ? styles.deactivateButton
-                                : styles.reactivateButton
-                            }
+                            style={styles.saveButton}
                           >
-                            {restaurant.active
-                              ? "DEACTIVATE RESTAURANT"
-                              : "REACTIVATE RESTAURANT"}
+                            SAVE RESTAURANT DETAILS
                           </button>
                         </Form>
                       </div>
+                    )}
+
+                    <div style={styles.actions}>
+                      <Form
+                        method="post"
+                        onSubmit={(event) => {
+                          const message = restaurant.active
+                            ? `Deactivate ${restaurant.name}? They will no longer be able to receive orders or access their restaurant account.`
+                            : `Reactivate ${restaurant.name}? Their restaurant account and ordering access will be restored.`;
+
+                          if (!window.confirm(message)) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        <input
+                          type="hidden"
+                          name="restaurantDbId"
+                          value={restaurant.id}
+                        />
+
+                        <input
+                          type="hidden"
+                          name="intent"
+                          value={
+                            restaurant.active
+                              ? "deactivate-restaurant"
+                              : "reactivate-restaurant"
+                          }
+                        />
+
+                        <button
+                          type="submit"
+                          style={
+                            restaurant.active
+                              ? styles.deactivateButton
+                              : styles.reactivateButton
+                          }
+                        >
+                          {restaurant.active
+                            ? "DEACTIVATE RESTAURANT"
+                            : "REACTIVATE RESTAURANT"}
+                        </button>
+                      </Form>
                     </div>
-                  );
-                },
-              )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
 
         <div style={styles.security}>
-          🔒 Deactivating a restaurant
-          does not delete its previous
-          orders or payout history. The
-          restaurant can be reactivated
-          later.
+          🔒 Deactivating a restaurant does not
+          delete its previous orders or payout
+          history. The restaurant can be
+          reactivated later.
         </div>
       </div>
     </main>
@@ -878,8 +974,7 @@ const styles = {
   page: {
     minHeight: "100vh",
     background: "#f4f4f4",
-    fontFamily:
-      "Arial, Helvetica, sans-serif",
+    fontFamily: "Arial, Helvetica, sans-serif",
     padding: 24,
     color: "#171717",
   },
@@ -999,8 +1094,7 @@ const styles = {
 
   restaurantTop: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 15,
     marginBottom: 18,
@@ -1021,8 +1115,7 @@ const styles = {
   activeBadge: {
     background: "#e7f6ec",
     color: "#137333",
-    border:
-      "1px solid #a9d9b8",
+    border: "1px solid #a9d9b8",
     borderRadius: 999,
     padding: "6px 10px",
     fontSize: 11,
@@ -1033,8 +1126,7 @@ const styles = {
   inactiveBadge: {
     background: "#f2f2f2",
     color: "#666",
-    border:
-      "1px solid #ccc",
+    border: "1px solid #ccc",
     borderRadius: 999,
     padding: "6px 10px",
     fontSize: 11,
@@ -1069,8 +1161,7 @@ const styles = {
     width: "100%",
     background: "#ffffff",
     color: "#b42318",
-    border:
-      "2px solid #b42318",
+    border: "2px solid #b42318",
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1082,8 +1173,7 @@ const styles = {
     width: "100%",
     background: "#137333",
     color: "#ffffff",
-    border:
-      "2px solid #137333",
+    border: "2px solid #137333",
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1102,8 +1192,7 @@ const styles = {
 
   error: {
     background: "#fff0f0",
-    border:
-      "1px solid #d72c0d",
+    border: "1px solid #d72c0d",
     color: "#8e1f0b",
     padding: 14,
     borderRadius: 10,
@@ -1112,8 +1201,7 @@ const styles = {
 
   success: {
     background: "#ffffff",
-    border:
-      "2px solid #137333",
+    border: "2px solid #137333",
     borderRadius: 16,
     padding: 24,
     marginBottom: 20,
@@ -1121,8 +1209,7 @@ const styles = {
 
   managementSuccess: {
     background: "#e7f6ec",
-    border:
-      "1px solid #a9d9b8",
+    border: "1px solid #a9d9b8",
     color: "#137333",
     borderRadius: 10,
     padding: 14,
@@ -1170,5 +1257,77 @@ const styles = {
     marginTop: 18,
     fontSize: 14,
     lineHeight: 1.5,
+  },
+
+  /*
+  ======================================================
+  NEW EDIT DETAILS STYLES
+  ======================================================
+  */
+
+  editAction: {
+    marginTop: 18,
+  },
+
+  editButton: {
+    width: "100%",
+    background: "#171717",
+    color: "#ffffff",
+    border: 0,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  editPanel: {
+    background: "#f8f8f8",
+    border: "1px solid #ddd",
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 15,
+  },
+
+  editHeading: {
+    fontSize: 20,
+    margin: "0 0 8px",
+  },
+
+  editDescription: {
+    color: "#666",
+    fontSize: 14,
+    margin: "0 0 20px",
+  },
+
+  readOnlyInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: 14,
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    fontSize: 16,
+    marginBottom: 8,
+    background: "#eeeeee",
+    color: "#666",
+    cursor: "not-allowed",
+  },
+
+  editNote: {
+    color: "#666",
+    fontSize: 12,
+    margin: "0 0 20px",
+  },
+
+  saveButton: {
+    width: "100%",
+    background: "#171717",
+    color: "#ffffff",
+    border: 0,
+    borderRadius: 9,
+    padding: 15,
+    fontSize: 15,
+    fontWeight: 900,
+    cursor: "pointer",
   },
 };
