@@ -243,12 +243,11 @@ export async function action({ request }) {
 
     const restaurantUser = restaurant.users[0];
 
-    if (!restaurantUser || !restaurantUser.activated) {
-      return {
-        error:
-          "Restaurant details can only be edited after the account has been activated.",
-      };
-    }
+    if (!restaurantUser) {
+  return {
+    error: "Restaurant account could not be found.",
+  };
+}
 
     const existingUser =
       await db.restaurantUser.findUnique({
@@ -717,9 +716,7 @@ export default function AdminRestaurants() {
                 const primaryUser =
                   restaurant.users?.[0];
 
-                const canEdit =
-                  restaurant.active &&
-                  primaryUser?.activated === true;
+                const canEdit = Boolean(primaryUser);
 
                 const isEditing =
                   editingRestaurantId === restaurant.id;
