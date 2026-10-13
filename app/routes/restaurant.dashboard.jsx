@@ -4090,10 +4090,9 @@ function AccountRow({
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#f4f4f4",
-    fontFamily:
-      "Arial, Helvetica, sans-serif",
-    color: "#171717",
+    background: "#F5F5F5",
+    fontFamily: "Arial, Helvetica, sans-serif",
+    color: "#111111",
     padding: 20,
   },
 
@@ -4103,22 +4102,23 @@ const styles = {
   },
 
   header: {
-    background: "#171717",
-    color: "#fff",
+    background: "#111111",
+    color: "#FFFFFF",
     borderRadius: 18,
     padding: 24,
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 20,
     flexWrap: "wrap",
     marginBottom: 15,
+    borderBottom: "5px solid #FFD400",
   },
 
   logo: {
-    color: "#f05a28",
+    color: "#FFD400",
     fontWeight: 900,
+    fontSize: 20,
     letterSpacing: 1.5,
     marginBottom: 7,
   },
@@ -4126,43 +4126,44 @@ const styles = {
   restaurantName: {
     margin: "0 0 6px",
     fontSize: 28,
+    color: "#FFFFFF",
   },
 
   location: {
-    color: "#bbb",
+    color: "#CCCCCC",
     fontSize: 13,
   },
 
   openBadge: {
-    background: "#e8f5e9",
-    color: "#137333",
+    background: "#FFD400",
+    color: "#111111",
     padding: "10px 14px",
     borderRadius: 30,
     fontWeight: 800,
   },
 
   pausedBadge: {
-    background: "#fdecec",
-    color: "#b42318",
+    background: "#FDECEC",
+    color: "#B42318",
     padding: "10px 14px",
     borderRadius: 30,
     fontWeight: 800,
   },
 
   controls: {
-    background: "#fff",
+    background: "#FFFFFF",
     padding: 15,
     borderRadius: 14,
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
     marginBottom: 15,
-    border: "1px solid #ddd",
+    border: "1px solid #DDDDDD",
   },
 
   darkButton: {
-    background: "#171717",
-    color: "#fff",
+    background: "#111111",
+    color: "#FFFFFF",
     border: 0,
     borderRadius: 10,
     padding: "14px 20px",
@@ -4171,9 +4172,9 @@ const styles = {
   },
 
   orangeButton: {
-    background: "#f05a28",
-    color: "#fff",
-    border: 0,
+    background: "#FFD400",
+    color: "#111111",
+    border: "2px solid #111111",
     borderRadius: 10,
     padding: "14px 20px",
     fontWeight: 800,
@@ -4181,9 +4182,9 @@ const styles = {
   },
 
   soundOnButton: {
-    background: "#e8f5e9",
-    color: "#137333",
-    border: "2px solid #137333",
+    background: "#FFF9D6",
+    color: "#111111",
+    border: "2px solid #FFD400",
     borderRadius: 10,
     padding: "10px 20px",
     fontWeight: 800,
@@ -4198,16 +4199,19 @@ const styles = {
   },
 
   newOrder: {
-    background: "#fff",
-    border:
-      "4px solid #f05a28",
+    background: "#FFFFFF",
+    border: "4px solid #FFD400",
     borderRadius: 18,
     padding: 25,
     marginBottom: 18,
   },
 
   newLabel: {
-    color: "#f05a28",
+    color: "#111111",
+    background: "#FFD400",
+    display: "inline-block",
+    padding: "9px 14px",
+    borderRadius: 8,
     fontSize: 20,
     fontWeight: 900,
     marginBottom: 14,
@@ -4215,8 +4219,7 @@ const styles = {
 
   detailTop: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
     flexWrap: "wrap",
     alignItems: "flex-start",
@@ -4224,10 +4227,9 @@ const styles = {
 
   pickupBadge: {
     display: "inline-block",
-    background: "#fff3e8",
-    color: "#d84a18",
-    border:
-      "2px solid #f05a28",
+    background: "#FFF9D6",
+    color: "#111111",
+    border: "2px solid #FFD400",
     borderRadius: 30,
     padding: "8px 14px",
     fontSize: 15,
@@ -4237,10 +4239,9 @@ const styles = {
 
   deliveryBadge: {
     display: "inline-block",
-    background: "#eaf2ff",
-    color: "#174ea6",
-    border:
-      "2px solid #174ea6",
+    background: "#F0F0F0",
+    color: "#111111",
+    border: "2px solid #111111",
     borderRadius: 30,
     padding: "8px 14px",
     fontSize: 15,
@@ -4251,11 +4252,13 @@ const styles = {
   orderNumber: {
     fontSize: 32,
     margin: "10px 0 4px",
+    color: "#111111",
   },
 
   total: {
     fontSize: 38,
     fontWeight: 900,
+    color: "#111111",
   },
 
   customerDetails: {
@@ -4266,10 +4269,11 @@ const styles = {
   },
 
   items: {
-    background: "#f7f7f7",
+    background: "#FFFBE6",
     borderRadius: 12,
     padding: 18,
     marginTop: 18,
+    border: "1px solid #F3E6A1",
   },
 
   item: {
@@ -4279,33 +4283,30 @@ const styles = {
   },
 
   quantity: {
-    color: "#f05a28",
+    color: "#111111",
+    fontWeight: 900,
   },
 
   orderBreakdown: {
     marginTop: 18,
-    borderTop:
-      "1px solid #eee",
+    borderTop: "1px solid #EEEEEE",
     paddingTop: 12,
   },
 
   breakdownRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
     padding: "7px 0",
   },
 
   breakdownTotal: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
     padding: "12px 0 0",
     marginTop: 6,
-    borderTop:
-      "2px solid #171717",
+    borderTop: "2px solid #111111",
     fontSize: 18,
   },
 
@@ -4320,9 +4321,9 @@ const styles = {
   acceptButton: {
     width: "100%",
     minHeight: 64,
-    background: "#171717",
-    color: "#fff",
-    border: 0,
+    background: "#FFD400",
+    color: "#111111",
+    border: "2px solid #111111",
     borderRadius: 12,
     fontSize: 18,
     fontWeight: 900,
@@ -4332,10 +4333,9 @@ const styles = {
   rejectButton: {
     width: "100%",
     minHeight: 64,
-    background: "#fff",
-    color: "#b42318",
-    border:
-      "2px solid #b42318",
+    background: "#FFFFFF",
+    color: "#B42318",
+    border: "2px solid #B42318",
     borderRadius: 12,
     fontSize: 18,
     fontWeight: 900,
@@ -4343,19 +4343,20 @@ const styles = {
   },
 
   waiting: {
-    background: "#fff",
+    background: "#FFFFFF",
     borderRadius: 18,
     padding: 50,
     textAlign: "center",
     marginBottom: 18,
+    border: "1px solid #DDDDDD",
   },
 
   tick: {
     width: 55,
     height: 55,
     borderRadius: "50%",
-    background: "#e8f5e9",
-    color: "#137333",
+    background: "#FFD400",
+    color: "#111111",
     display: "grid",
     placeItems: "center",
     margin: "0 auto",
@@ -4364,18 +4365,19 @@ const styles = {
   },
 
   panel: {
-    background: "#fff",
+    background: "#FFFFFF",
     borderRadius: 16,
     padding: 22,
-    border: "1px solid #ddd",
+    border: "1px solid #DDDDDD",
     marginBottom: 18,
   },
 
   pageHeading: {
-    background: "#fff",
+    background: "#FFFFFF",
     borderRadius: 16,
     padding: 22,
-    border: "1px solid #ddd",
+    border: "1px solid #DDDDDD",
+    borderLeft: "5px solid #FFD400",
     marginBottom: 18,
   },
 
@@ -4387,8 +4389,8 @@ const styles = {
   },
 
   count: {
-    background: "#f05a28",
-    color: "#fff",
+    background: "#FFD400",
+    color: "#111111",
     minWidth: 26,
     height: 26,
     padding: "0 7px",
@@ -4400,18 +4402,16 @@ const styles = {
 
   previousOrderButton: {
     width: "100%",
-    background: "#fff",
+    background: "#FFFFFF",
     border: 0,
-    borderTop:
-      "1px solid #eee",
+    borderTop: "1px solid #EEEEEE",
     padding: "18px 0",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 20,
     cursor: "pointer",
-    color: "#171717",
+    color: "#111111",
     fontFamily: "inherit",
   },
 
@@ -4425,19 +4425,22 @@ const styles = {
   previousOrderType: {
     fontSize: 12,
     fontWeight: 900,
-    color: "#f05a28",
+    color: "#111111",
     marginTop: 5,
   },
 
   viewOrder: {
-    color: "#f05a28",
+    color: "#111111",
     fontWeight: 900,
     fontSize: 12,
+    background: "#FFD400",
+    padding: "5px 9px",
+    borderRadius: 6,
   },
 
   acceptedBadge: {
     display: "inline-block",
-    background: "#e8f5e9",
+    background: "#E8F5E9",
     color: "#137333",
     padding: "8px 12px",
     borderRadius: 30,
@@ -4447,8 +4450,8 @@ const styles = {
 
   rejectedBadge: {
     display: "inline-block",
-    background: "#fdecec",
-    color: "#b42318",
+    background: "#FDECEC",
+    color: "#B42318",
     padding: "8px 12px",
     borderRadius: 30,
     fontWeight: 800,
@@ -4464,38 +4467,43 @@ const styles = {
   },
 
   card: {
-    background: "#fff",
-    border: "1px solid #ddd",
+    background: "#FFFFFF",
+    border: "1px solid #DDDDDD",
+    borderTop: "5px solid #FFD400",
     borderRadius: 14,
     padding: 22,
   },
 
   cardTitle: {
-    color: "#666",
+    color: "#666666",
     fontSize: 13,
     marginBottom: 10,
+    fontWeight: 800,
   },
 
   cardValue: {
     fontSize: 28,
     fontWeight: 900,
+    color: "#111111",
   },
 
   payout: {
-    background: "#171717",
-    color: "#fff",
+    background: "#111111",
+    color: "#FFFFFF",
     borderRadius: 16,
     padding: 25,
     marginBottom: 18,
+    borderBottom: "5px solid #FFD400",
   },
 
   smallWhite: {
     fontSize: 13,
     fontWeight: 800,
+    color: "#FFFFFF",
   },
 
   payoutAmount: {
-    color: "#f05a28",
+    color: "#FFD400",
     fontSize: 40,
     fontWeight: 900,
     margin: "10px 0 20px",
@@ -4503,22 +4511,20 @@ const styles = {
 
   accountRow: {
     padding: "15px 0",
-    borderBottom:
-      "1px solid #eee",
+    borderBottom: "1px solid #EEEEEE",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 20,
   },
 
   greyText: {
-    color: "#666",
+    color: "#666666",
   },
 
   logoutButton: {
     display: "inline-block",
-    background: "#171717",
-    color: "#fff",
+    background: "#111111",
+    color: "#FFFFFF",
     textDecoration: "none",
     borderRadius: 10,
     padding: "14px 22px",
@@ -4526,21 +4532,21 @@ const styles = {
   },
 
   bottomNav: {
-    background: "#171717",
+    background: "#111111",
     borderRadius: 14,
     padding: 8,
     display: "grid",
-    gridTemplateColumns:
-      "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: 6,
     position: "sticky",
     bottom: 10,
     zIndex: 20,
+    border: "1px solid #333333",
   },
 
   activeNav: {
-    background: "#f05a28",
-    color: "#fff",
+    background: "#FFD400",
+    color: "#111111",
     border: 0,
     borderRadius: 9,
     padding: "16px 8px",
@@ -4550,7 +4556,7 @@ const styles = {
 
   navButton: {
     background: "transparent",
-    color: "#fff",
+    color: "#FFFFFF",
     border: 0,
     borderRadius: 9,
     padding: "16px 8px",
@@ -4561,8 +4567,7 @@ const styles = {
   modalOverlay: {
     position: "fixed",
     inset: 0,
-    background:
-      "rgba(0,0,0,0.65)",
+    background: "rgba(0,0,0,0.65)",
     zIndex: 1000,
     display: "flex",
     alignItems: "center",
@@ -4577,11 +4582,11 @@ const styles = {
     maxWidth: 720,
     maxHeight: "90vh",
     overflowY: "auto",
-    background: "#fff",
+    background: "#FFFFFF",
     borderRadius: 18,
     padding: 26,
-    boxShadow:
-      "0 20px 60px rgba(0,0,0,0.3)",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+    borderTop: "5px solid #FFD400",
   },
 
   closeButton: {
@@ -4592,14 +4597,14 @@ const styles = {
     height: 42,
     borderRadius: "50%",
     border: 0,
-    background: "#171717",
-    color: "#fff",
+    background: "#111111",
+    color: "#FFFFFF",
     fontSize: 26,
     cursor: "pointer",
   },
 
   modalHeading: {
-    color: "#f05a28",
+    color: "#111111",
     fontWeight: 900,
     letterSpacing: 1,
     marginBottom: 18,
@@ -4609,9 +4614,9 @@ const styles = {
   modalDoneButton: {
     width: "100%",
     marginTop: 24,
-    background: "#171717",
-    color: "#fff",
-    border: 0,
+    background: "#FFD400",
+    color: "#111111",
+    border: "2px solid #111111",
     borderRadius: 10,
     padding: "15px 20px",
     fontWeight: 900,
