@@ -3243,9 +3243,11 @@ export default function RestaurantDashboard() {
       <div style={styles.container}>
         <header style={styles.header}>
           <div>
-            <div style={styles.logo}>
-              MEAL DEAL HUB
-            </div>
+            <img
+  src="/meal-deal-hub-logo.png"
+  alt="Meal Deal Hub"
+  style={styles.logo}
+/>
 
             <h1
               style={
@@ -4115,13 +4117,14 @@ const styles = {
     borderBottom: "5px solid #FFD400",
   },
 
-  logo: {
-    color: "#FFD400",
-    fontWeight: 900,
-    fontSize: 20,
-    letterSpacing: 1.5,
-    marginBottom: 7,
-  },
+logo: {
+  display: "block",
+  width: 95,
+  height: 95,
+  objectFit: "contain",
+  borderRadius: 18,
+  marginBottom: 12,
+},
 
   restaurantName: {
     margin: "0 0 6px",
