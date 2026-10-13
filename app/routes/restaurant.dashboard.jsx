@@ -15,6 +15,12 @@ const COOKIE_NAME = "mdh_restaurant_session";
 const SHOP_DOMAIN = "bite-pfyaja4s.myshopify.com";
 const SERVICE_FEE_PREFIX = "Meal Deal Hub Service Fee";
 
+/*
+=========================================================
+AUTHENTICATION
+=========================================================
+*/
+
 function getSessionSecret() {
   return (
     process.env.RESTAURANT_SESSION_SECRET ||
@@ -74,12 +80,7 @@ function verifySession(sessionValue) {
     return null;
   }
 
-  if (
-    !crypto.timingSafeEqual(
-      signatureBuffer,
-      expectedBuffer,
-    )
-  ) {
+  if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
     return null;
   }
 
@@ -118,6 +119,12 @@ async function getAuthenticatedUser(request) {
   return user;
 }
 
+/*
+=========================================================
+HELPERS
+=========================================================
+*/
+
 function getAttribute(attributes, key) {
   return (
     attributes?.find(
@@ -143,17 +150,20 @@ function textMatches(first, second) {
     return false;
   }
 
-  return (
-    a === b ||
-    a.includes(b) ||
-    b.includes(a)
-  );
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 function isServiceFeeItem(item) {
   return String(item?.name || "").startsWith(
     SERVICE_FEE_PREFIX,
   );
+}
+
+function money(value) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(Number(value || 0));
 }
 
 function londonTime(dateString) {
@@ -330,22 +340,30 @@ function getShippingLocation(order) {
   );
 }
 
+function toPence(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function formatPayoutDate(date) {
+  if (!date) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date));
+}
+
 /*
 =========================================================
-MAIN SHOPIFY ORDER QUERY
+SHOPIFY ORDER QUERY
 =========================================================
-
-Keep fulfillmentOrders OUT of this query.
-
-This is the stable query that loads the normal Shopify
-orders and prevents the entire dashboard disappearing
-if fulfillment permissions have a problem.
 */
 
-async function fetchShopifyOrderPage(
-  admin,
-  cursor = null,
-) {
+async function fetchShopifyOrderPage(admin, cursor = null) {
   const response = await admin.graphql(
     `
       query RestaurantOrders($cursor: String) {
@@ -442,20 +460,19 @@ async function fetchShopifyOrderPage(
 
   if (result.errors?.length) {
     console.error(
-      "SHOPIFY MAIN ORDER GRAPHQL ERRORS:",
+      "SHOPIFY ORDER GRAPHQL ERRORS:",
       JSON.stringify(result.errors),
     );
+
+    throw new Error("Shopify order query failed.");
   }
 
   return {
-    nodes:
-      result.data?.orders?.nodes || [],
-
-    pageInfo:
-      result.data?.orders?.pageInfo || {
-        hasNextPage: false,
-        endCursor: null,
-      },
+    nodes: result.data?.orders?.nodes || [],
+    pageInfo: result.data?.orders?.pageInfo || {
+      hasNextPage: false,
+      endCursor: null,
+    },
   };
 }
 
@@ -463,11 +480,6 @@ async function fetchShopifyOrderPage(
 =========================================================
 SAFE ASSIGNED LOCATION LOOKUP
 =========================================================
-
-This is deliberately separate from the main order query.
-
-If Shopify ever refuses fulfillment access, normal
-dashboard orders continue loading.
 */
 
 async function getAssignedLocations(
@@ -512,45 +524,29 @@ async function getAssignedLocations(
       return [];
     }
 
-    const locations =
-      (
-        result.data?.order
-          ?.fulfillmentOrders?.nodes ||
-        []
+    return (
+      result.data?.order?.fulfillmentOrders?.nodes || []
+    )
+      .map(
+        (fulfillmentOrder) =>
+          fulfillmentOrder?.assignedLocation?.name || "",
       )
-        .map(
-          (fulfillmentOrder) =>
-            fulfillmentOrder
-              ?.assignedLocation
-              ?.name || "",
-        )
-        .filter(Boolean);
-
-    console.log(
-      "ASSIGNED LOCATION RESULT:",
-      JSON.stringify({
-        order: orderName,
-        orderId,
-        locations,
-      }),
-    );
-
-    return locations;
+      .filter(Boolean);
   } catch (error) {
     console.error(
       "ASSIGNED LOCATION LOOKUP FAILED:",
-      {
-        order: orderName,
-        orderId,
-        message:
-          error?.message ||
-          String(error),
-      },
+      error,
     );
 
     return [];
   }
 }
+
+/*
+=========================================================
+FETCH SHOPIFY ORDERS
+=========================================================
+*/
 
 async function getRawShopifyOrders(admin) {
   const allOrders = [];
@@ -561,65 +557,23 @@ async function getRawShopifyOrders(admin) {
 
   const MAX_PAGES = 5;
 
-  while (
-    hasNextPage &&
-    pageNumber < MAX_PAGES
-  ) {
+  while (hasNextPage && pageNumber < MAX_PAGES) {
     pageNumber += 1;
 
-    const page =
-      await fetchShopifyOrderPage(
-        admin,
-        cursor,
-      );
+    const page = await fetchShopifyOrderPage(
+      admin,
+      cursor,
+    );
 
     allOrders.push(...page.nodes);
 
-    console.log(
-      "SHOPIFY ORDER PAGE:",
-      JSON.stringify({
-        page: pageNumber,
-        ordersOnPage:
-          page.nodes.length,
-        firstOrder:
-          page.nodes[0]?.name || "",
-        lastOrder:
-          page.nodes[
-            page.nodes.length - 1
-          ]?.name || "",
-        hasNextPage:
-          page.pageInfo.hasNextPage,
-      }),
-    );
-
-    hasNextPage = Boolean(
-      page.pageInfo.hasNextPage,
-    );
-
-    cursor =
-      page.pageInfo.endCursor ||
-      null;
+    hasNextPage = Boolean(page.pageInfo.hasNextPage);
+    cursor = page.pageInfo.endCursor || null;
 
     if (!cursor) {
       hasNextPage = false;
     }
   }
-
-  console.log(
-    "SHOPIFY ORDERS FOUND TOTAL:",
-    allOrders.length,
-  );
-
-  console.log(
-    "SHOPIFY NEWEST ORDERS:",
-    allOrders
-      .slice(0, 20)
-      .map((order) => ({
-        name: order.name,
-        createdAt:
-          order.createdAt,
-      })),
-  );
 
   return allOrders;
 }
@@ -628,1779 +582,1087 @@ async function getShopifyOrders(
   restaurantId,
   restaurantName,
 ) {
-  try {
-    const { admin } =
-      await shopify.unauthenticated.admin(
-        SHOP_DOMAIN,
-      );
-
-    const nodes =
-      await getRawShopifyOrders(
-        admin,
-      );
-
-    const results = [];
-
-    const ASSIGNED_LOCATION_LOOKUP_AGE_MS =
-      48 * 60 * 60 * 1000;
-
-    const now = Date.now();
-
-    for (const order of nodes) {
-      const foodItems =
-        order.lineItems?.nodes?.filter(
-          (item) =>
-            !isServiceFeeItem(item),
-        ) || [];
-
-      if (foodItems.length === 0) {
-        console.log(
-          "ORDER SKIPPED - NO FOOD ITEMS:",
-          order.name,
-        );
-
-        continue;
-      }
-
-      const foodRestaurantIds =
-        foodItems
-          .map((item) =>
-            getAttribute(
-              item.customAttributes,
-              "_Restaurant ID",
-            ),
-          )
-          .filter(Boolean);
-
-      const matchingItems =
-        foodItems.filter(
-          (item) =>
-            normaliseText(
-              getAttribute(
-                item.customAttributes,
-                "_Restaurant ID",
-              ),
-            ) ===
-            normaliseText(
-              restaurantId,
-            ),
-        );
-
-      const noFoodRestaurantId =
-        foodRestaurantIds.length === 0;
-
-      const hasExplicitFoodRestaurant =
-        foodRestaurantIds.length > 0;
-
-      const orderRestaurantId =
-        getAttribute(
-          order.customAttributes,
-          "_Restaurant ID",
-        );
-
-      const orderRestaurantMatches =
-        Boolean(orderRestaurantId) &&
-        normaliseText(
-          orderRestaurantId,
-        ) ===
-          normaliseText(
-            restaurantId,
-          );
-
-      const orderHasDifferentRestaurant =
-        Boolean(orderRestaurantId) &&
-        !orderRestaurantMatches;
-
-      const orderType =
-        getOrderType(order);
-
-      const shippingLocation =
-        getShippingLocation(order);
-
-      let belongsToRestaurant =
-        matchingItems.length > 0;
-
-      if (
-        !hasExplicitFoodRestaurant &&
-        orderRestaurantMatches
-      ) {
-        belongsToRestaurant = true;
-      }
-
-      let assignedLocations = [];
-
-      let assignedLocationMatchesRestaurant =
-        false;
-
-      const orderCreatedTime =
-        order.createdAt
-          ? new Date(
-              order.createdAt,
-            ).getTime()
-          : 0;
-
-      const orderAge =
-        now - orderCreatedTime;
-
-      const orderIsRecent =
-        Number.isFinite(
-          orderCreatedTime,
-        ) &&
-        orderCreatedTime > 0 &&
-        orderAge >= 0 &&
-        orderAge <=
-          ASSIGNED_LOCATION_LOOKUP_AGE_MS;
-
-      const shouldCheckAssignedLocation =
-        !belongsToRestaurant &&
-        noFoodRestaurantId &&
-        !orderRestaurantId &&
-        !orderHasDifferentRestaurant &&
-        orderIsRecent;
-
-      if (
-        shouldCheckAssignedLocation
-      ) {
-        assignedLocations =
-          await getAssignedLocations(
-            admin,
-            order.id,
-            order.name,
-          );
-
-        assignedLocationMatchesRestaurant =
-          assignedLocations.some(
-            (locationName) =>
-              textMatches(
-                locationName,
-                restaurantName,
-              ),
-          );
-
-        if (
-          assignedLocationMatchesRestaurant
-        ) {
-          belongsToRestaurant = true;
-        }
-      }
-
-      const canUseFallback =
-        noFoodRestaurantId &&
-        !orderHasDifferentRestaurant &&
-        !orderRestaurantId;
-
-      const shippingMatchesRestaurant =
-        canUseFallback &&
-        textMatches(
-          shippingLocation,
-          restaurantName,
-        );
-
-      if (
-        shippingMatchesRestaurant
-      ) {
-        belongsToRestaurant = true;
-      }
-
-      const foodNameMatchesRestaurant =
-        canUseFallback &&
-        foodItems.some((item) =>
-          textMatches(
-            item.name,
-            restaurantName,
-          ),
-        );
-
-      if (
-        foodNameMatchesRestaurant
-      ) {
-        belongsToRestaurant = true;
-      }
-
-      console.log(
-        "ORDER MATCH CHECK:",
-        JSON.stringify({
-          order:
-            order.name,
-
-          createdAt:
-            order.createdAt,
-
-          restaurantId,
-
-          restaurantName,
-
-          orderType,
-
-          shippingLocation,
-
-          assignedLocations,
-
-          assignedLocationMatch:
-            assignedLocationMatchesRestaurant,
-
-          assignedLocationChecked:
-            shouldCheckAssignedLocation,
-
-          foodRestaurantIds,
-
-          orderRestaurantId,
-
-          normalIdMatch:
-            matchingItems.length > 0,
-
-          orderIdMatch:
-            orderRestaurantMatches,
-
-          shippingMatch:
-            shippingMatchesRestaurant,
-
-          foodNameMatch:
-            foodNameMatchesRestaurant,
-
-          belongsToRestaurant,
-        }),
-      );
-
-      if (!belongsToRestaurant) {
-        continue;
-      }
-
-      const restaurantFoodItems =
-        matchingItems.length > 0
-          ? matchingItems
-          : foodItems;
-
-      const foodTotal =
-        restaurantFoodItems.reduce(
-          (total, item) =>
-            total +
-            Number(
-              item.originalTotalSet
-                ?.shopMoney?.amount || 0,
-            ),
-          0,
-        );
-
-      const serviceFee =
-        (
-          order.lineItems?.nodes ||
-          []
-        )
-          .filter((item) =>
-            isServiceFeeItem(item),
-          )
-          .reduce(
-            (total, item) =>
-              total +
-              Number(
-                item.originalTotalSet
-                  ?.shopMoney?.amount || 0,
-              ),
-            0,
-          );
-
-      results.push({
-        id:
-          order.id,
-
-        orderNumber:
-          order.name,
-
-        createdAt:
-          order.createdAt,
-
-        restaurantId,
-
-        orderType,
-
-        pickupLocation:
-          orderType === "pickup"
-            ? (
-                assignedLocations[0] ||
-                shippingLocation
-              )
-            : "",
-
-        time:
-          londonTime(
-            order.createdAt,
-          ),
-
-        dateTime:
-          londonDateTime(
-            order.createdAt,
-          ),
-
-        customer:
-          [
-            order.customer?.firstName,
-            order.customer?.lastName,
-          ]
-            .filter(Boolean)
-            .join(" ") ||
-          [
-            order.shippingAddress?.firstName,
-            order.shippingAddress?.lastName,
-          ]
-            .filter(Boolean)
-            .join(" ") ||
-          "Customer",
-
-        customerEmail:
-          order.customer?.email ||
-          "",
-
-        customerPhone:
-          order.customer?.phone ||
-          order.shippingAddress?.phone ||
-          "",
-
-        customerAddress:
-          [
-            order.shippingAddress?.address1,
-            order.shippingAddress?.address2,
-            order.shippingAddress?.city,
-            order.shippingAddress?.province,
-            order.shippingAddress?.zip,
-          ]
-            .filter(Boolean)
-            .join(", "),
-
-        items:
-          restaurantFoodItems.map(
-            (item) => ({
-              name:
-                item.name,
-
-              quantity:
-                item.quantity,
-            }),
-          ),
-
-        foodTotal,
-
-        delivery:
-          Number(
-            order
-              .currentShippingPriceSet
-              ?.shopMoney?.amount ||
-              0,
-          ),
-
-        serviceFee,
-
-        total:
-          Number(
-            order
-              .currentTotalPriceSet
-              ?.shopMoney?.amount ||
-              0,
-          ),
-
-        financialStatus:
-          order.displayFinancialStatus,
-
-        status:
-          "new",
-      });
-    }
-
-    return results;
-  } catch (error) {
-    console.error(
-      "Meal Deal Hub Shopify order error:",
-      error,
-    );
-
-    return [];
-  }
-}
- export async function loader({
-  request,
-}) {
-  const user =
-    await getAuthenticatedUser(
-      request,
-    );
-
-  if (!user) {
-    throw redirect(
-      "/restaurant/login",
-    );
-  }
-
-/*
-  =========================================================
-  NORMAL DASHBOARD LOADER
-  =========================================================
-  */
-
-  const orders =
-    await getShopifyOrders(
-      user.restaurant.restaurantId,
-      user.restaurant.name,
-    );
-
-  const decisions =
-    await db.orderDecision.findMany({
-      where: {
-        restaurantId:
-          user.restaurant.id,
-      },
-
-      orderBy: {
-        decidedAt: "desc",
-      },
-    });
-
-  const decisionMap =
-    new Map(
-      decisions.map(
-        (decision) => [
-          decision.shopifyOrderId,
-          decision.status,
-        ],
-      ),
-    );
-
-  const ORDER_MAX_AGE_MS =
-    24 * 60 * 60 * 1000;
+  const { admin } = await shopify.unauthenticated.admin(
+    SHOP_DOMAIN,
+  );
+
+  const nodes = await getRawShopifyOrders(admin);
+  const results = [];
+
+  const ASSIGNED_LOCATION_LOOKUP_AGE_MS =
+    48 * 60 * 60 * 1000;
 
   const now = Date.now();
 
-  const ordersWithDecisions =
-    orders
-      .filter((order) => {
-        const savedStatus =
-          decisionMap.get(
-            order.id,
-          );
+  for (const order of nodes) {
+    const foodItems =
+      order.lineItems?.nodes?.filter(
+        (item) => !isServiceFeeItem(item),
+      ) || [];
 
-        if (savedStatus) {
-          return true;
-        }
+    if (foodItems.length === 0) {
+      continue;
+    }
 
-        if (!order.createdAt) {
-          return false;
-        }
+    const foodRestaurantIds = foodItems
+      .map((item) =>
+        getAttribute(
+          item.customAttributes,
+          "_Restaurant ID",
+        ),
+      )
+      .filter(Boolean);
 
-        const orderTime =
-          new Date(
-            order.createdAt,
-          ).getTime();
+    const matchingItems = foodItems.filter(
+      (item) =>
+        normaliseText(
+          getAttribute(
+            item.customAttributes,
+            "_Restaurant ID",
+          ),
+        ) === normaliseText(restaurantId),
+    );
 
-        return (
-          Number.isFinite(orderTime) &&
-          now - orderTime <=
-            ORDER_MAX_AGE_MS
-        );
-      })
-      .map((order) => {
-        const savedStatus =
-          decisionMap.get(
-            order.id,
-          );
+    const noFoodRestaurantId =
+      foodRestaurantIds.length === 0;
 
-        return {
-          ...order,
+    const hasExplicitFoodRestaurant =
+      foodRestaurantIds.length > 0;
 
-          status:
-            savedStatus ||
-            order.status,
-        };
-      })
-      .sort(
-        (a, b) =>
-          new Date(
-            b.createdAt,
-          ).getTime() -
-          new Date(
-            a.createdAt,
-          ).getTime(),
+    const orderRestaurantId = getAttribute(
+      order.customAttributes,
+      "_Restaurant ID",
+    );
+
+    const orderRestaurantMatches =
+      Boolean(orderRestaurantId) &&
+      normaliseText(orderRestaurantId) ===
+        normaliseText(restaurantId);
+
+    const orderHasDifferentRestaurant =
+      Boolean(orderRestaurantId) &&
+      !orderRestaurantMatches;
+
+    const orderType = getOrderType(order);
+    const shippingLocation = getShippingLocation(order);
+
+    let belongsToRestaurant =
+      matchingItems.length > 0;
+
+    if (
+      !hasExplicitFoodRestaurant &&
+      orderRestaurantMatches
+    ) {
+      belongsToRestaurant = true;
+    }
+
+    let assignedLocations = [];
+
+    const orderCreatedTime = order.createdAt
+      ? new Date(order.createdAt).getTime()
+      : 0;
+
+    const orderAge = now - orderCreatedTime;
+
+    const orderIsRecent =
+      Number.isFinite(orderCreatedTime) &&
+      orderCreatedTime > 0 &&
+      orderAge >= 0 &&
+      orderAge <= ASSIGNED_LOCATION_LOOKUP_AGE_MS;
+
+    const shouldCheckAssignedLocation =
+      !belongsToRestaurant &&
+      noFoodRestaurantId &&
+      !orderRestaurantId &&
+      !orderHasDifferentRestaurant &&
+      orderIsRecent;
+
+    if (shouldCheckAssignedLocation) {
+      assignedLocations = await getAssignedLocations(
+        admin,
+        order.id,
+        order.name,
       );
 
-  console.log(
-    "DASHBOARD ORDERS:",
-    JSON.stringify(
-      ordersWithDecisions.map(
-        (order) => ({
-          order:
-            order.orderNumber,
+      if (
+        assignedLocations.some((locationName) =>
+          textMatches(locationName, restaurantName),
+        )
+      ) {
+        belongsToRestaurant = true;
+      }
+    }
 
-          restaurantId:
-            order.restaurantId,
+    const canUseFallback =
+      noFoodRestaurantId &&
+      !orderHasDifferentRestaurant &&
+      !orderRestaurantId;
 
-          status:
-            order.status,
+    if (
+      canUseFallback &&
+      textMatches(shippingLocation, restaurantName)
+    ) {
+      belongsToRestaurant = true;
+    }
 
-          createdAt:
-            order.createdAt,
-        }),
+    if (
+      canUseFallback &&
+      foodItems.some((item) =>
+        textMatches(item.name, restaurantName),
+      )
+    ) {
+      belongsToRestaurant = true;
+    }
+
+    if (!belongsToRestaurant) {
+      continue;
+    }
+
+    const restaurantFoodItems =
+      matchingItems.length > 0
+        ? matchingItems
+        : foodItems;
+
+    const foodTotal = restaurantFoodItems.reduce(
+      (total, item) =>
+        total +
+        Number(
+          item.originalTotalSet?.shopMoney?.amount || 0,
+        ),
+      0,
+    );
+
+    const serviceFee = (
+      order.lineItems?.nodes || []
+    )
+      .filter((item) => isServiceFeeItem(item))
+      .reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.originalTotalSet?.shopMoney?.amount || 0,
+          ),
+        0,
+      );
+
+    results.push({
+      id: order.id,
+      orderNumber: order.name,
+      createdAt: order.createdAt,
+      restaurantId,
+      orderType,
+
+      pickupLocation:
+        orderType === "pickup"
+          ? assignedLocations[0] || shippingLocation
+          : "",
+
+      time: londonTime(order.createdAt),
+      dateTime: londonDateTime(order.createdAt),
+
+      customer:
+        [
+          order.customer?.firstName,
+          order.customer?.lastName,
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        [
+          order.shippingAddress?.firstName,
+          order.shippingAddress?.lastName,
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        "Customer",
+
+      customerEmail: order.customer?.email || "",
+
+      customerPhone:
+        order.customer?.phone ||
+        order.shippingAddress?.phone ||
+        "",
+
+      customerAddress: [
+        order.shippingAddress?.address1,
+        order.shippingAddress?.address2,
+        order.shippingAddress?.city,
+        order.shippingAddress?.province,
+        order.shippingAddress?.zip,
+      ]
+        .filter(Boolean)
+        .join(", "),
+
+      items: restaurantFoodItems.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+      })),
+
+      foodTotal,
+
+      delivery: Number(
+        order.currentShippingPriceSet?.shopMoney
+          ?.amount || 0,
       ),
-    ),
+
+      serviceFee,
+
+      total: Number(
+        order.currentTotalPriceSet?.shopMoney
+          ?.amount || 0,
+      ),
+
+      currencyCode:
+        order.currentTotalPriceSet?.shopMoney
+          ?.currencyCode || "",
+
+      financialStatus: order.displayFinancialStatus,
+
+      status: "new",
+    });
+  }
+
+  return results;
+}
+
+/*
+=========================================================
+LOADER
+=========================================================
+*/
+
+export async function loader({ request }) {
+  const user = await getAuthenticatedUser(request);
+
+  if (!user) {
+    throw redirect("/restaurant/login");
+  }
+
+  let orders = [];
+  let orderLoadError = "";
+
+  try {
+    orders = await getShopifyOrders(
+      user.restaurant.restaurantId,
+      user.restaurant.name,
+    );
+  } catch (error) {
+    console.error(
+      "MEAL DEAL HUB SHOPIFY ORDER ERROR:",
+      error,
+    );
+
+    orderLoadError =
+      "Shopify orders could not be refreshed. Please try again.";
+  }
+
+  const decisions = await db.orderDecision.findMany({
+    where: {
+      restaurantId: user.restaurant.id,
+    },
+    orderBy: {
+      decidedAt: "desc",
+    },
+  });
+
+  const decisionMap = new Map(
+    decisions.map((decision) => [
+      decision.shopifyOrderId,
+      decision.status,
+    ]),
   );
 
-    /*
+  const ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const ordersWithDecisions = orders
+    .filter((order) => {
+      const savedStatus = decisionMap.get(order.id);
+
+      if (savedStatus) {
+        return true;
+      }
+
+      if (!order.createdAt) {
+        return false;
+      }
+
+      const orderTime = new Date(
+        order.createdAt,
+      ).getTime();
+
+      return (
+        Number.isFinite(orderTime) &&
+        now - orderTime <= ORDER_MAX_AGE_MS
+      );
+    })
+    .map((order) => ({
+      ...order,
+      status: decisionMap.get(order.id) || order.status,
+    }))
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime(),
+    );
+
+  /*
   =========================================================
-  PAID THIS MONTH — COMPLETED PAYOUTS ONLY
+  VERIFIED PAYMENT TOTALS
+
+  Count only accepted orders with recorded, captured
+  Shopify payments and complete GBP snapshots.
+  =========================================================
+  */
+
+  const paymentWeek = getCurrentPaymentWeek();
+
+  const verifiedOrders = decisions.filter((decision) => {
+    if (
+      decision.status !== "accepted" ||
+      decision.paymentCaptured !== true ||
+      !decision.capturedAt ||
+      decision.foodSales == null ||
+      decision.deliveryIncome == null ||
+      decision.serviceFee == null ||
+      decision.currencyCode !== "GBP"
+    ) {
+      return false;
+    }
+
+    const capturedDate = londonDateKey(
+      decision.capturedAt,
+    );
+
+    return (
+      capturedDate >= paymentWeek.startKey &&
+      capturedDate <= paymentWeek.endKey
+    );
+  });
+
+  const foodPence = verifiedOrders.reduce(
+    (total, order) => total + toPence(order.foodSales),
+    0,
+  );
+
+  const deliveryPence = verifiedOrders.reduce(
+    (total, order) =>
+      total + toPence(order.deliveryIncome),
+    0,
+  );
+
+  const serviceFeePence = verifiedOrders.reduce(
+    (total, order) => total + toPence(order.serviceFee),
+    0,
+  );
+
+  const commissionPence = Math.round(foodPence * 0.1);
+
+  const paymentSummary = {
+    foodSales: foodPence / 100,
+    deliveryIncome: deliveryPence / 100,
+    commission: commissionPence / 100,
+
+    restaurantEarnings:
+      (foodPence - commissionPence + deliveryPence) /
+      100,
+
+    serviceFees: serviceFeePence / 100,
+    acceptedOrderCount: verifiedOrders.length,
+  };
+
+  /*
+  =========================================================
+  ACTUAL PAYOUT HISTORY
+  =========================================================
+  */
+
+  const payoutHistory = await db.restaurantPayout.findMany({
+    where: {
+      restaurantId: user.restaurant.id,
+    },
+    orderBy: {
+      weekStart: "desc",
+    },
+    take: 52,
+    select: {
+      id: true,
+      weekStart: true,
+      weekEnd: true,
+      payoutDate: true,
+      restaurantEarnings: true,
+      acceptedOrderCount: true,
+      status: true,
+    },
+  });
+
+  /*
+  =========================================================
+  PAID THIS MONTH
+
+  Use the London calendar month, not a browser date.
   =========================================================
   */
 
   const londonNow = londonDateParts();
 
-  const monthStart = new Date(
-    Date.UTC(
-      londonNow.year,
-      londonNow.month - 1,
-      1,
-    ),
-  );
+  const currentMonthKey = dateKeyFromParts(
+    londonNow.year,
+    londonNow.month,
+    1,
+  ).slice(0, 7);
 
-  const nextMonthStart = new Date(
-    Date.UTC(
-      londonNow.year,
-      londonNow.month,
-      1,
-    ),
-  );
+  const paidThisMonthPence = payoutHistory
+    .filter((payout) => {
+      const status = String(
+        payout.status || "",
+      ).toLowerCase();
 
-  const completedPayouts = await db.restaurantPayout.findMany({
-    where: {
-      restaurantId: user.restaurant.id,
-      status: {
-        in: ["paid", "completed"],
-      },
-      payoutDate: {
-        gte: monthStart,
-        lt: nextMonthStart,
-      },
-    },
-    select: {
-      restaurantEarnings: true,
-    },
-  });
+      return (
+        (status === "paid" || status === "completed") &&
+        londonDateKey(payout.payoutDate).startsWith(
+          currentMonthKey,
+        )
+      );
+    })
+    .reduce(
+      (total, payout) =>
+        total + toPence(payout.restaurantEarnings),
+      0,
+    );
 
-  const paidThisMonth = completedPayouts.reduce(
-    (total, payout) =>
-      total + Number(payout.restaurantEarnings),
-    0,
-  );
   return {
     user: {
-      email:
-        user.email,
-
-      firstName:
-        user.firstName,
-
-      lastName:
-        user.lastName,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
     },
 
     restaurant: {
-      id:
-        user.restaurant.id,
-
-      restaurantId:
-        user.restaurant.restaurantId,
-
-      name:
-        user.restaurant.name,
-
-      acceptingOrders:
-        user.restaurant.acceptingOrders,
+      id: user.restaurant.id,
+      restaurantId: user.restaurant.restaurantId,
+      name: user.restaurant.name,
+      acceptingOrders: user.restaurant.acceptingOrders,
     },
 
-    orders:
-      ordersWithDecisions,
+    orders: ordersWithDecisions,
+    orderLoadError,
+    paidThisMonth: paidThisMonthPence / 100,
+    paymentSummary,
 
-    paidThisMonth,
+    payoutHistory: payoutHistory.map((payout) => ({
+      id: payout.id,
+      weekStart: payout.weekStart,
+      weekEnd: payout.weekEnd,
+      payoutDate: payout.payoutDate,
+
+      restaurantEarnings: Number(
+        payout.restaurantEarnings,
+      ),
+
+      acceptedOrderCount: payout.acceptedOrderCount,
+      status: payout.status,
+    })),
   };
 }
-  
 
-export async function action({
-  request,
-}) {
-  const user =
-    await getAuthenticatedUser(
-      request,
-    );
-
-  if (!user) {
-    throw redirect(
-      "/restaurant/login",
-    );
-  }
-
-  const formData =
-    await request.formData();
-
-  const intent =
-    String(
-      formData.get("intent") ||
-        "",
-    );
-
-  console.log(
-    "ORDER ACTION RECEIVED:",
-    {
-      intent,
-
-      shopifyOrderId:
-        formData.get(
-          "shopifyOrderId",
-        ),
-
-      orderNumber:
-        formData.get(
-          "orderNumber",
-        ),
-
-      restaurantDbId:
-        user.restaurant.id,
-
-      restaurantId:
-        user.restaurant.restaurantId,
-    },
-  );
-
-   if (
-    intent ===
-      "accept-order" ||
-    intent ===
-      "reject-order"
-  ) {
-    const shopifyOrderId =
-      String(
-        formData.get(
-          "shopifyOrderId",
-        ) || "",
-      );
-
-    const orderNumber =
-      String(
-        formData.get(
-          "orderNumber",
-        ) || "",
-      );
-
-    if (
-      !shopifyOrderId ||
-      !orderNumber
-    ) {
-      return {
-        success: false,
-
-        message:
-          "Order information is missing.",
-      };
-    }
-
-    const status =
-      intent ===
-      "accept-order"
-        ? "accepted"
-        : "rejected";
-
-    try {
-      /*
-      ======================================================
-      ACCEPT ORDER - CAPTURE PAYMENT FIRST
-      ======================================================
-      */
-
-      if (
-        intent ===
-        "accept-order"
-      ) {
-        const { admin } =
-          await shopify.unauthenticated.admin(
-            SHOP_DOMAIN,
-          );
-
-        /*
-        ------------------------------------------------------
-        GET ORDER + PAYMENT TRANSACTIONS
-        ------------------------------------------------------
-        */
-
-        const paymentResponse =
-          await admin.graphql(
-            `
-              query MealDealHubOrderPayment(
-                $id: ID!
-              ) {
-                order(id: $id) {
-                  id
-                  name
-                  displayFinancialStatus
-
-                                    lineItems(first: 100) {
-                    nodes {
-                      customAttributes {
-                        key
-                        value
-                      }
-                    }
-                  }
-
-                  currentTotalPriceSet {
-                    shopMoney {
-                      amount
-                      currencyCode
-                    }
-
-                    presentmentMoney {
-                      amount
-                      currencyCode
-                    }
-                  }
-
-                  transactions(first: 20) {
-                    id
-                    kind
-                    status
-                    gateway
-                    test
-                    multiCapturable
-
-                    amountSet {
-                      shopMoney {
-                        amount
-                        currencyCode
-                      }
-
-                      presentmentMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-
-                    parentTransaction {
-                      id
-                    }
-                  }
-                }
-              }
-            `,
-            {
-              variables: {
-                id:
-                  shopifyOrderId,
-              },
-            },
-          );
-
-        const paymentResult =
-          await paymentResponse.json();
-
-        if (
-          paymentResult.errors?.length
-        ) {
-          console.error(
-            "PAYMENT LOOKUP GRAPHQL ERRORS:",
-            JSON.stringify(
-              paymentResult.errors,
-            ),
-          );
-
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Payment could not be checked. Order was not accepted.",
-          };
-        }
-
-        const shopifyOrder =
-          paymentResult.data?.order;
-
-        if (!shopifyOrder) {
-          console.error(
-            "PAYMENT LOOKUP: ORDER NOT FOUND",
-            {
-              shopifyOrderId,
-              orderNumber,
-            },
-          );
-
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Shopify order could not be found. Order was not accepted.",
-          };
-        }
-
-        /*
-        ------------------------------------------------------
-        SECURITY CHECK
-        Make sure the submitted order number matches Shopify.
-        ------------------------------------------------------
-        */
-
-        if (
-          shopifyOrder.name !==
-          orderNumber
-        ) {
-          console.error(
-            "PAYMENT ORDER NUMBER MISMATCH:",
-            {
-              submitted:
-                orderNumber,
-
-              shopify:
-                shopifyOrder.name,
-
-              shopifyOrderId,
-            },
-          );
-
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Order verification failed. Order was not accepted.",
-          };
-        }
-      /*
-------------------------------------------------------
-RESTAURANT OWNERSHIP SECURITY CHECK
-------------------------------------------------------
-
-The order has already been filtered by getShopifyOrders()
-for the logged-in restaurant before it is displayed on
-the restaurant dashboard.
-
-Verify that this exact Shopify order is present in the
-logged-in restaurant's order list before allowing the
-payment action.
-------------------------------------------------------
+/*
+=========================================================
+ACTION
+=========================================================
 */
 
-const restaurantOrders =
-  await getShopifyOrders(
-    user.restaurant.restaurantId,
-    user.restaurant.name,
+export async function action({ request }) {
+  const user = await getAuthenticatedUser(request);
+
+  if (!user) {
+    throw redirect("/restaurant/login");
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "");
+
+  /*
+  =========================================================
+  PAUSE / RESUME
+  =========================================================
+  */
+
+  if (
+    intent === "pause-orders" ||
+    intent === "resume-orders"
+  ) {
+    await db.restaurant.update({
+      where: {
+        id: user.restaurant.id,
+      },
+      data: {
+        acceptingOrders: intent === "resume-orders",
+      },
+    });
+
+    return {
+      success: true,
+    };
+  }
+
+  if (
+    intent !== "accept-order" &&
+    intent !== "reject-order"
+  ) {
+    return {
+      success: false,
+      message: "Unknown action.",
+    };
+  }
+
+  const shopifyOrderId = String(
+    formData.get("shopifyOrderId") || "",
   );
 
-const restaurantOwnsOrder =
-  restaurantOrders.some(
-    (restaurantOrder) =>
-      restaurantOrder.id ===
-      shopifyOrderId,
+  const orderNumber = String(
+    formData.get("orderNumber") || "",
   );
 
-console.log(
-  "PAYMENT SECURITY - OWNERSHIP CHECK:",
-  {
-    shopifyOrderId,
-    orderNumber,
+  if (!shopifyOrderId || !orderNumber) {
+    return {
+      success: false,
+      message: "Order information is missing.",
+    };
+  }
 
-    restaurantId:
-      user.restaurant.restaurantId,
+  const accepting = intent === "accept-order";
 
-    restaurantName:
-      user.restaurant.name,
-
-    restaurantOwnsOrder,
-  },
-);
-
-if (!restaurantOwnsOrder) {
-  console.error(
-    "PAYMENT SECURITY - RESTAURANT DOES NOT OWN ORDER:",
-    {
-      shopifyOrderId,
-      orderNumber,
-
-      restaurantId:
-        user.restaurant.restaurantId,
-    },
-  );
-
-  return {
+  const fail = (message) => ({
     success: false,
-
     shopifyOrderId,
     orderNumber,
-
-    message:
-      "This order does not belong to this restaurant. Payment was not captured.",
-  };
-}
-
-console.log(
-  "PAYMENT SECURITY - RESTAURANT OWNERSHIP VERIFIED:",
-  {
-    shopifyOrderId,
-    orderNumber,
-
-    restaurantId:
-      user.restaurant.restaurantId,
-  },
-);
-        /*
-        ------------------------------------------------------
-        IDEMPOTENCY CHECK
-
-        If Shopify already has a successful SALE or CAPTURE
-        transaction, don't attempt to charge again.
-        ------------------------------------------------------
-        */
-
-        const successfulCapture =
-          shopifyOrder.transactions.find(
-            (transaction) =>
-              transaction.status ===
-                "SUCCESS" &&
-              (
-                transaction.kind ===
-                  "CAPTURE" ||
-                transaction.kind ===
-                  "SALE"
-              ),
-          );
-
-        if (successfulCapture) {
-          console.log(
-            "PAYMENT ALREADY CAPTURED:",
-            {
-              shopifyOrderId,
-
-              orderNumber,
-
-              transactionId:
-                successfulCapture.id,
-            },
-          );
-        } else {
-          /*
-          ----------------------------------------------------
-          FIND SUCCESSFUL AUTHORIZATION
-          ----------------------------------------------------
-          */
-
-          const authorization =
-            shopifyOrder.transactions.find(
-              (transaction) =>
-                transaction.kind ===
-                  "AUTHORIZATION" &&
-                transaction.status ===
-                  "SUCCESS",
-            );
-
-          if (!authorization) {
-            console.error(
-              "NO SUCCESSFUL AUTHORIZATION:",
-              {
-                shopifyOrderId,
-
-                orderNumber,
-
-                financialStatus:
-                  shopifyOrder
-                    .displayFinancialStatus,
-
-                transactions:
-                  shopifyOrder
-                    .transactions,
-              },
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "No valid payment authorization was found. Order was not accepted.",
-            };
-          }
-
-          const captureAmount =
-            authorization.amountSet
-              ?.presentmentMoney
-              ?.amount ||
-            authorization.amountSet
-              ?.shopMoney
-              ?.amount;
-
-          const captureCurrency =
-            authorization.amountSet
-              ?.presentmentMoney
-              ?.currencyCode ||
-            authorization.amountSet
-              ?.shopMoney
-              ?.currencyCode;
-
-          if (!captureAmount) {
-            console.error(
-              "CAPTURE AMOUNT MISSING:",
-              {
-                shopifyOrderId,
-
-                orderNumber,
-
-                authorization,
-              },
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment amount could not be determined. Order was not accepted.",
-            };
-          }
-
-          console.log(
-            "ATTEMPTING PAYMENT CAPTURE:",
-            {
-              shopifyOrderId,
-
-              orderNumber,
-
-              authorizationId:
-                authorization.id,
-
-              amount:
-                captureAmount,
-
-              currency:
-                captureCurrency,
-
-              gateway:
-                authorization.gateway,
-
-              test:
-                authorization.test,
-            },
-          );
-
-          /*
-          ----------------------------------------------------
-          CAPTURE AUTHORIZED PAYMENT
-          ----------------------------------------------------
-          */
-
-          const captureResponse =
-            await admin.graphql(
-              `
-                mutation MealDealHubCaptureOrder(
-                  $input: OrderCaptureInput!
-                ) {
-                  orderCapture(
-                    input: $input
-                  ) {
-                    transaction {
-                      id
-                      kind
-                      status
-                      test
-
-                      amountSet {
-                        shopMoney {
-                          amount
-                          currencyCode
-                        }
-
-                        presentmentMoney {
-                          amount
-                          currencyCode
-                        }
-                      }
-                    }
-
-                    userErrors {
-                      field
-                      message
-                    }
-                  }
-                }
-              `,
-              {
-                variables: {
-                  input: {
-                    id:
-                      shopifyOrderId,
-
-                    parentTransactionId:
-                      authorization.id,
-
-                    amount:
-                      captureAmount,
-
-                    ...(captureCurrency
-                      ? {
-                          currency:
-                            captureCurrency,
-                        }
-                      : {}),
-                  },
-                },
-              },
-            );
-
-          const captureResult =
-            await captureResponse.json();
-
-          if (
-            captureResult.errors?.length
-          ) {
-            console.error(
-              "PAYMENT CAPTURE GRAPHQL ERRORS:",
-              JSON.stringify(
-                captureResult.errors,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment capture failed. Order was not accepted.",
-            };
-          }
-
-          const capturePayload =
-            captureResult.data
-              ?.orderCapture;
-
-          const captureErrors =
-            capturePayload
-              ?.userErrors ||
-            [];
-
-          if (
-            captureErrors.length
-          ) {
-            console.error(
-              "PAYMENT CAPTURE USER ERRORS:",
-              JSON.stringify(
-                captureErrors,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                captureErrors
-                  .map(
-                    (error) =>
-                      error.message,
-                  )
-                  .join(" ") ||
-                "Payment capture failed. Order was not accepted.",
-            };
-          }
-
-          const captureTransaction =
-            capturePayload
-              ?.transaction;
-
-          if (
-            !captureTransaction ||
-            captureTransaction.status !==
-              "SUCCESS"
-          ) {
-            console.error(
-              "PAYMENT CAPTURE NOT SUCCESSFUL:",
-              JSON.stringify(
-                capturePayload,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment was not successfully captured. Order was not accepted.",
-            };
-          }
-
-          console.log(
-            "PAYMENT CAPTURE SUCCESS:",
-            JSON.stringify(
-              captureTransaction,
-            ),
-          );
-        }
-      }
-      /*
-      ======================================================
-      REJECT ORDER - VOID AUTHORIZATION FIRST
-      ======================================================
-      */
-
-      if (
-        intent ===
-        "reject-order"
-      ) {
-        const { admin } =
-          await shopify.unauthenticated.admin(
-            SHOP_DOMAIN,
-          );
-
-        /*
-        ------------------------------------------------------
-        GET ORDER + PAYMENT TRANSACTIONS
-        ------------------------------------------------------
-        */
-
-        const paymentResponse =
-          await admin.graphql(
-            `
-              query MealDealHubRejectPayment(
-                $id: ID!
-              ) {
-                order(id: $id) {
-                  id
-                  name
-                  displayFinancialStatus
-
-                  transactions(first: 20) {
-                    id
-                    kind
-                    status
-                    gateway
-                    test
-
-                    parentTransaction {
-                      id
-                    }
-                  }
-                }
-              }
-            `,
-            {
-              variables: {
-                id:
-                  shopifyOrderId,
-              },
-            },
-          );
-
-        const paymentResult =
-          await paymentResponse.json();
-
-        if (
-          paymentResult.errors?.length
-        ) {
-          console.error(
-            "REJECT PAYMENT LOOKUP GRAPHQL ERRORS:",
-            JSON.stringify(
-              paymentResult.errors,
-            ),
-          );
-
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Payment could not be checked. Order was not rejected.",
-          };
-        }
-
-        const shopifyOrder =
-          paymentResult.data?.order;
-
-        if (!shopifyOrder) {
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Shopify order could not be found. Order was not rejected.",
-          };
-        }
-
-        /*
-        ------------------------------------------------------
-        VERIFY ORDER NUMBER
-        ------------------------------------------------------
-        */
-
-        if (
-          shopifyOrder.name !==
-          orderNumber
-        ) {
-          console.error(
-            "REJECT ORDER NUMBER MISMATCH:",
-            {
-              submitted:
-                orderNumber,
-
-              shopify:
-                shopifyOrder.name,
-
-              shopifyOrderId,
-            },
-          );
-
-          return {
-            success: false,
-
-            shopifyOrderId,
-
-            orderNumber,
-
-            message:
-              "Order verification failed. Order was not rejected.",
-          };
-        }
-
-        /*
-        ------------------------------------------------------
-        IF ALREADY VOIDED, DO NOT VOID AGAIN
-        ------------------------------------------------------
-        */
-
-        const successfulVoid =
-          shopifyOrder.transactions.find(
-            (transaction) =>
-              transaction.kind ===
-                "VOID" &&
-              transaction.status ===
-                "SUCCESS",
-          );
-
-        if (successfulVoid) {
-          console.log(
-            "PAYMENT ALREADY VOIDED:",
-            {
-              shopifyOrderId,
-
-              orderNumber,
-
-              transactionId:
-                successfulVoid.id,
-            },
-          );
-        } else {
-          /*
-          ----------------------------------------------------
-          DO NOT REJECT A PAYMENT THAT HAS ALREADY
-          BEEN CAPTURED
-          ----------------------------------------------------
-          */
-
-          const successfulCapture =
-            shopifyOrder.transactions.find(
-              (transaction) =>
-                transaction.status ===
-                  "SUCCESS" &&
-                (
-                  transaction.kind ===
-                    "CAPTURE" ||
-                  transaction.kind ===
-                    "SALE"
-                ),
-            );
-
-          if (successfulCapture) {
-            console.error(
-              "REJECT BLOCKED - PAYMENT ALREADY CAPTURED:",
-              {
-                shopifyOrderId,
-
-                orderNumber,
-
-                transactionId:
-                  successfulCapture.id,
-              },
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment has already been captured. This order cannot be rejected using the normal reject process.",
-            };
-          }
-
-          /*
-          ----------------------------------------------------
-          FIND SUCCESSFUL AUTHORIZATION
-          ----------------------------------------------------
-          */
-
-          const authorization =
-            shopifyOrder.transactions.find(
-              (transaction) =>
-                transaction.kind ===
-                  "AUTHORIZATION" &&
-                transaction.status ===
-                  "SUCCESS",
-            );
-
-          if (!authorization) {
-            console.error(
-              "REJECT - NO SUCCESSFUL AUTHORIZATION:",
-              {
-                shopifyOrderId,
-
-                orderNumber,
-
-                financialStatus:
-                  shopifyOrder
-                    .displayFinancialStatus,
-              },
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "No payment authorization was found. Order was not rejected.",
-            };
-          }
-
-          console.log(
-            "ATTEMPTING PAYMENT VOID:",
-            {
-              shopifyOrderId,
-
-              orderNumber,
-
-              authorizationId:
-                authorization.id,
-
-              gateway:
-                authorization.gateway,
-
-              test:
-                authorization.test,
-            },
-          );
-
-          /*
-          ----------------------------------------------------
-          VOID AUTHORIZATION
-          ----------------------------------------------------
-          */
-
-          const voidResponse =
-            await admin.graphql(
-              `
-                mutation MealDealHubVoidPayment(
-                  $parentTransactionId: ID!
-                ) {
-                  transactionVoid(
-                    parentTransactionId:
-                      $parentTransactionId
-                  ) {
-                    transaction {
-                      id
-                      kind
-                      status
-                      test
-
-                      parentTransaction {
-                        id
-                      }
-                    }
-
-                    userErrors {
-                      field
-                      message
-                      code
-                    }
-                  }
-                }
-              `,
-              {
-                variables: {
-                  parentTransactionId:
-                    authorization.id,
-                },
-              },
-            );
-
-          const voidResult =
-            await voidResponse.json();
-
-          if (
-            voidResult.errors?.length
-          ) {
-            console.error(
-              "PAYMENT VOID GRAPHQL ERRORS:",
-              JSON.stringify(
-                voidResult.errors,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment authorization could not be released. Order was not rejected.",
-            };
-          }
-
-          const voidPayload =
-            voidResult.data
-              ?.transactionVoid;
-
-          const voidErrors =
-            voidPayload?.userErrors ||
-            [];
-
-          if (
-            voidErrors.length
-          ) {
-            console.error(
-              "PAYMENT VOID USER ERRORS:",
-              JSON.stringify(
-                voidErrors,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                voidErrors
-                  .map(
-                    (error) =>
-                      error.message,
-                  )
-                  .join(" ") ||
-                "Payment authorization could not be released. Order was not rejected.",
-            };
-          }
-
-          const voidTransaction =
-            voidPayload?.transaction;
-
-          if (
-            !voidTransaction ||
-            voidTransaction.kind !==
-              "VOID" ||
-            voidTransaction.status !==
-              "SUCCESS"
-          ) {
-            console.error(
-              "PAYMENT VOID NOT SUCCESSFUL:",
-              JSON.stringify(
-                voidPayload,
-              ),
-            );
-
-            return {
-              success: false,
-
-              shopifyOrderId,
-
-              orderNumber,
-
-              message:
-                "Payment authorization was not successfully released. Order was not rejected.",
-            };
-          }
-
-          console.log(
-            "PAYMENT VOID SUCCESS:",
-            JSON.stringify(
-              voidTransaction,
-            ),
-          );
-        }
-      }
-      /*
-      ======================================================
-      PAYMENT SUCCESSFUL / REJECT PATH
-      NOW SAVE RESTAURANT DECISION
-      ======================================================
-      */
-
-      await db.orderDecision.upsert({
-        where: {
-          shopifyOrderId_restaurantId:
-            {
-              shopifyOrderId,
-
-              restaurantId:
-                user.restaurant.id,
-            },
-        },
-
-        update: {
-          status,
-
-          orderNumber,
-
-          decidedAt:
-            new Date(),
-        },
-
-        create: {
+    message,
+  });
+
+  try {
+    /*
+    ========================================================
+    CHECK EXISTING DECISION
+    ========================================================
+    */
+
+    const existingDecision = await db.orderDecision.findUnique({
+      where: {
+        shopifyOrderId_restaurantId: {
           shopifyOrderId,
-
-          orderNumber,
-
-          restaurantId:
-            user.restaurant.id,
-
-          status,
+          restaurantId: user.restaurant.id,
         },
-      });
+      },
+    });
 
-      console.log(
-        "ORDER DECISION SAVED:",
-        {
-          shopifyOrderId,
-          orderNumber,
-          status,
-        },
-      );
+    if (existingDecision?.status === "rejected") {
+      if (accepting) {
+        return fail(
+          "This order was already rejected and cannot be accepted.",
+        );
+      }
 
       return {
         success: true,
         shopifyOrderId,
         orderNumber,
-        status,
-      };
-    } catch (error) {
-      console.error(
-        "ORDER ACCEPT/REJECT FAILED:",
-        error,
-      );
-
-      return {
-        success: false,
-
-        shopifyOrderId,
-
-        orderNumber,
-
-        message:
-          intent ===
-          "accept-order"
-            ? "Payment could not be captured. Order was not accepted."
-            : "The order decision could not be saved.",
+        status: "rejected",
       };
     }
-  }
 
-  if (
-    intent === "pause-orders"
-  ) {
-    await db.restaurant.update({
+    if (existingDecision?.status === "accepted") {
+      if (!accepting) {
+        return fail(
+          "This order was already accepted and cannot be rejected.",
+        );
+      }
+
+      if (
+        existingDecision.paymentCaptured === true &&
+        existingDecision.foodSales != null &&
+        existingDecision.deliveryIncome != null &&
+        existingDecision.serviceFee != null &&
+        existingDecision.currencyCode === "GBP"
+      ) {
+        return {
+          success: true,
+          shopifyOrderId,
+          orderNumber,
+          status: "accepted",
+        };
+      }
+    }
+
+    /*
+    ========================================================
+    VERIFY RESTAURANT OWNERSHIP
+
+    Never trust an order ID submitted by the browser.
+    ========================================================
+    */
+
+    const restaurantOrders = await getShopifyOrders(
+      user.restaurant.restaurantId,
+      user.restaurant.name,
+    );
+
+    const restaurantOrder = restaurantOrders.find(
+      (order) => order.id === shopifyOrderId,
+    );
+
+    if (!restaurantOrder) {
+      return fail(
+        "This order could not be verified for your restaurant.",
+      );
+    }
+
+    if (restaurantOrder.orderNumber !== orderNumber) {
+      return fail("Order verification failed.");
+    }
+
+    /*
+    ========================================================
+    SHOPIFY PAYMENT LOOKUP
+    ========================================================
+    */
+
+    const { admin } = await shopify.unauthenticated.admin(
+      SHOP_DOMAIN,
+    );
+
+    const paymentResponse = await admin.graphql(
+      `
+        query MealDealHubPaymentCheck($id: ID!) {
+          order(id: $id) {
+            id
+            name
+            displayFinancialStatus
+
+            currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+
+            transactions(first: 100) {
+              id
+              kind
+              status
+              processedAt
+
+              amountSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          id: shopifyOrderId,
+        },
+      },
+    );
+
+    const paymentResult = await paymentResponse.json();
+
+    if (paymentResult.errors?.length) {
+      console.error(
+        "SHOPIFY PAYMENT LOOKUP ERROR:",
+        paymentResult.errors,
+      );
+
+      return fail(
+        "Shopify payment could not be checked. Please try again.",
+      );
+    }
+
+    const shopifyOrder = paymentResult.data?.order;
+
+    if (
+      !shopifyOrder ||
+      shopifyOrder.name !== orderNumber
+    ) {
+      return fail("Shopify order verification failed.");
+    }
+
+    const transactions = shopifyOrder.transactions || [];
+
+    const successfulCapture = transactions.find(
+      (transaction) =>
+        transaction.status === "SUCCESS" &&
+        (
+          transaction.kind === "CAPTURE" ||
+          transaction.kind === "SALE"
+        ),
+    );
+
+    /*
+    ========================================================
+    REJECT ORDER
+    ========================================================
+    */
+
+    if (!accepting) {
+      if (successfulCapture) {
+        return fail(
+          "Payment has already been captured. This order cannot be rejected.",
+        );
+      }
+
+      const successfulVoid = transactions.find(
+        (transaction) =>
+          transaction.kind === "VOID" &&
+          transaction.status === "SUCCESS",
+      );
+
+      if (!successfulVoid) {
+        const authorization = transactions.find(
+          (transaction) =>
+            transaction.kind === "AUTHORIZATION" &&
+            transaction.status === "SUCCESS",
+        );
+
+        if (!authorization) {
+          return fail(
+            "No valid payment authorization was found.",
+          );
+        }
+
+        const voidResponse = await admin.graphql(
+          `
+            mutation MealDealHubVoidPayment(
+              $parentTransactionId: ID!
+            ) {
+              transactionVoid(
+                parentTransactionId: $parentTransactionId
+              ) {
+                transaction {
+                  id
+                  kind
+                  status
+                }
+
+                userErrors {
+                  field
+                  message
+                  code
+                }
+              }
+            }
+          `,
+          {
+            variables: {
+              parentTransactionId: authorization.id,
+            },
+          },
+        );
+
+        const voidResult = await voidResponse.json();
+
+        if (voidResult.errors?.length) {
+          console.error(
+            "SHOPIFY VOID ERROR:",
+            voidResult.errors,
+          );
+
+          return fail(
+            "Payment authorization could not be released.",
+          );
+        }
+
+        const voidPayload =
+          voidResult.data?.transactionVoid;
+
+        const voidErrors = voidPayload?.userErrors || [];
+
+        if (voidErrors.length) {
+          return fail(
+            voidErrors
+              .map((error) => error.message)
+              .join(" "),
+          );
+        }
+
+        if (
+          voidPayload?.transaction?.kind !== "VOID" ||
+          voidPayload?.transaction?.status !== "SUCCESS"
+        ) {
+          return fail(
+            "Shopify did not confirm the payment was voided.",
+          );
+        }
+      }
+
+      await db.orderDecision.upsert({
+        where: {
+          shopifyOrderId_restaurantId: {
+            shopifyOrderId,
+            restaurantId: user.restaurant.id,
+          },
+        },
+
+        update: {
+          status: "rejected",
+          orderNumber,
+        },
+
+        create: {
+          shopifyOrderId,
+          orderNumber,
+          restaurantId: user.restaurant.id,
+          status: "rejected",
+        },
+      });
+
+      return {
+        success: true,
+        shopifyOrderId,
+        orderNumber,
+        status: "rejected",
+      };
+    }
+
+    /*
+    ========================================================
+    ACCEPT ORDER
+
+    Capture payment only if Shopify has not already
+    recorded a successful CAPTURE or SALE.
+    ========================================================
+    */
+
+    let captureTransaction = successfulCapture;
+
+    if (!captureTransaction) {
+      const authorization = transactions.find(
+        (transaction) =>
+          transaction.kind === "AUTHORIZATION" &&
+          transaction.status === "SUCCESS",
+      );
+
+      if (!authorization) {
+        return fail(
+          "No valid payment authorization was found. Order was not accepted.",
+        );
+      }
+
+      const captureAmount =
+        authorization.amountSet?.presentmentMoney
+          ?.amount ||
+        authorization.amountSet?.shopMoney?.amount;
+
+      const captureCurrency =
+        authorization.amountSet?.presentmentMoney
+          ?.currencyCode ||
+        authorization.amountSet?.shopMoney?.currencyCode;
+
+      if (
+        !captureAmount ||
+        !captureCurrency ||
+        Number(captureAmount) <= 0
+      ) {
+        return fail(
+          "The authorized payment amount is invalid.",
+        );
+      }
+
+      const captureResponse = await admin.graphql(
+        `
+          mutation MealDealHubCaptureOrder(
+            $input: OrderCaptureInput!
+          ) {
+            orderCapture(input: $input) {
+              transaction {
+                id
+                kind
+                status
+                processedAt
+
+                amountSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+              }
+
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            input: {
+              id: shopifyOrderId,
+              parentTransactionId: authorization.id,
+              amount: captureAmount,
+              currency: captureCurrency,
+            },
+          },
+        },
+      );
+
+      const captureResult = await captureResponse.json();
+
+      if (captureResult.errors?.length) {
+        console.error(
+          "SHOPIFY CAPTURE ERROR:",
+          captureResult.errors,
+        );
+
+        return fail(
+          "Shopify could not confirm payment capture.",
+        );
+      }
+
+      const capturePayload =
+        captureResult.data?.orderCapture;
+
+      const captureErrors =
+        capturePayload?.userErrors || [];
+
+      if (captureErrors.length) {
+        return fail(
+          captureErrors
+            .map((error) => error.message)
+            .join(" "),
+        );
+      }
+
+      captureTransaction = capturePayload?.transaction;
+
+      if (
+        !captureTransaction ||
+        captureTransaction.status !== "SUCCESS" ||
+        captureTransaction.kind !== "CAPTURE"
+      ) {
+        return fail(
+          "Payment was not successfully captured.",
+        );
+      }
+    }
+
+    /*
+    ========================================================
+    SAVE VERIFIED PAYMENT SNAPSHOT
+    ========================================================
+    */
+
+    const foodSales = Number(restaurantOrder.foodTotal);
+    const deliveryIncome = Number(
+      restaurantOrder.delivery,
+    );
+    const serviceFee = Number(restaurantOrder.serviceFee);
+
+    if (
+      ![foodSales, deliveryIncome, serviceFee].every(
+        (amount) =>
+          Number.isFinite(amount) && amount >= 0,
+      )
+    ) {
+      return fail(
+        "Payment was captured, but the earnings breakdown could not be saved. Please retry.",
+      );
+    }
+
+    const currencyCode =
+      captureTransaction.amountSet?.shopMoney
+        ?.currencyCode ||
+      shopifyOrder.currentTotalPriceSet?.shopMoney
+        ?.currencyCode ||
+      "";
+
+    if (currencyCode !== "GBP") {
+      return fail(
+        "Payment was captured, but this currency requires manual review.",
+      );
+    }
+
+    const capturedAt =
+      existingDecision?.capturedAt ||
+      (
+        captureTransaction.processedAt
+          ? new Date(captureTransaction.processedAt)
+          : new Date()
+      );
+
+    const snapshot = {
+      status: "accepted",
+      orderNumber,
+      foodSales: foodSales.toFixed(2),
+      deliveryIncome: deliveryIncome.toFixed(2),
+      serviceFee: serviceFee.toFixed(2),
+      paymentCaptured: true,
+      capturedAt,
+      currencyCode,
+    };
+
+    await db.orderDecision.upsert({
       where: {
-        id:
-          user.restaurant.id,
+        shopifyOrderId_restaurantId: {
+          shopifyOrderId,
+          restaurantId: user.restaurant.id,
+        },
       },
 
-      data: {
-        acceptingOrders:
-          false,
+      update: snapshot,
+
+      create: {
+        shopifyOrderId,
+        restaurantId: user.restaurant.id,
+        ...snapshot,
       },
+    });
+
+    console.log("RESTAURANT PAYMENT SAVED:", {
+      shopifyOrderId,
+      orderNumber,
+      restaurantId: user.restaurant.id,
+      foodSales,
+      deliveryIncome,
+      serviceFee,
+      paymentCaptured: true,
     });
 
     return {
       success: true,
+      shopifyOrderId,
+      orderNumber,
+      status: "accepted",
     };
+  } catch (error) {
+    console.error(
+      "RESTAURANT ORDER ACTION ERROR:",
+      error,
+    );
+
+    return fail(
+      "The order could not be completed. Please retry or contact support.",
+    );
   }
-
-  if (
-    intent === "resume-orders"
-  ) {
-    await db.restaurant.update({
-      where: {
-        id:
-          user.restaurant.id,
-      },
-
-      data: {
-        acceptingOrders:
-          true,
-      },
-    });
-
-    return {
-      success: true,
-    };
-  }
-
-  return {
-    success: false,
-  };
 }
 
-function money(value) {
-  return new Intl.NumberFormat(
-    "en-GB",
-    {
-      style: "currency",
-      currency: "GBP",
-    },
-  ).format(
-    Number(value || 0),
-  );
-}
+/*
+=========================================================
+ORDER COMPONENTS
+=========================================================
+*/
 
-function OrderTypeBadge({
-  orderType,
-}) {
-  const pickup =
-    orderType === "pickup";
+function OrderTypeBadge({ orderType }) {
+  const pickup = orderType === "pickup";
 
   return (
     <div
@@ -2410,9 +1672,7 @@ function OrderTypeBadge({
           : styles.deliveryBadge
       }
     >
-      {pickup
-        ? "🛍 PICKUP"
-        : "🚗 DELIVERY"}
+      {pickup ? "🛍 PICKUP" : "🚗 DELIVERY"}
     </div>
   );
 }
@@ -2429,25 +1689,13 @@ function OrderDetails({
     <>
       <div style={styles.detailTop}>
         <div>
-          <OrderTypeBadge
-            orderType={
-              order.orderType
-            }
-          />
+          <OrderTypeBadge orderType={order.orderType} />
 
-          <h2
-            style={
-              styles.orderNumber
-            }
-          >
+          <h2 style={styles.orderNumber}>
             {order.orderNumber}
           </h2>
 
-          <div
-            style={
-              styles.greyText
-            }
-          >
+          <div style={styles.greyText}>
             {order.dateTime}
           </div>
         </div>
@@ -2458,15 +1706,10 @@ function OrderDetails({
       </div>
 
       {showStatus && (
-        <div
-          style={{
-            marginTop: "14px",
-          }}
-        >
+        <div style={{ marginTop: 14 }}>
           <span
             style={
-              order.status ===
-              "accepted"
+              order.status === "accepted"
                 ? styles.acceptedBadge
                 : styles.rejectedBadge
             }
@@ -2478,245 +1721,140 @@ function OrderDetails({
         </div>
       )}
 
-      <div
-        style={
-          styles.customerDetails
-        }
-      >
+      <div style={styles.customerDetails}>
         <div>
-          <strong>
-            Customer:
-          </strong>{" "}
-          {order.customer ||
-            "Customer"}
+          <strong>Customer:</strong>{" "}
+          {order.customer || "Customer"}
         </div>
 
         {order.customerPhone && (
           <div>
-            <strong>
-              Phone:
-            </strong>{" "}
+            <strong>Phone:</strong>{" "}
             {order.customerPhone}
           </div>
         )}
 
         {order.customerEmail && (
           <div>
-            <strong>
-              Email:
-            </strong>{" "}
+            <strong>Email:</strong>{" "}
             {order.customerEmail}
           </div>
         )}
 
-        {order.orderType ===
-          "delivery" &&
+        {order.orderType === "delivery" &&
           order.customerAddress && (
             <div>
-              <strong>
-                Delivery address:
-              </strong>{" "}
-              {
-                order.customerAddress
-              }
+              <strong>Delivery address:</strong>{" "}
+              {order.customerAddress}
             </div>
           )}
 
-        {order.orderType ===
-          "pickup" &&
+        {order.orderType === "pickup" &&
           order.pickupLocation && (
             <div>
-              <strong>
-                Pickup location:
-              </strong>{" "}
-              {
-                order.pickupLocation
-              }
+              <strong>Pickup location:</strong>{" "}
+              {order.pickupLocation}
             </div>
           )}
       </div>
 
       <div style={styles.items}>
-        {order.items.map(
-          (item, index) => (
-            <div
-              key={index}
-              style={styles.item}
-            >
-              <span
-                style={
-                  styles.quantity
-                }
-              >
-                {item.quantity} ×
-              </span>{" "}
-              {item.name}
-            </div>
-          ),
-        )}
+        {(order.items || []).map((item, index) => (
+          <div key={index} style={styles.item}>
+            <span style={styles.quantity}>
+              {item.quantity} ×
+            </span>{" "}
+            {item.name}
+          </div>
+        ))}
       </div>
 
-      <div
-        style={
-          styles.orderBreakdown
-        }
-      >
-        <div
-          style={
-            styles.breakdownRow
-          }
-        >
+      <div style={styles.orderBreakdown}>
+        <div style={styles.breakdownRow}>
           <span>Food</span>
-
-          <strong>
-            {money(
-              order.foodTotal,
-            )}
-          </strong>
+          <strong>{money(order.foodTotal)}</strong>
         </div>
 
-        {Number(
-          order.delivery || 0,
-        ) > 0 && (
-          <div
-            style={
-              styles.breakdownRow
-            }
-          >
-            <span>
-              Delivery
-            </span>
-
-            <strong>
-              {money(
-                order.delivery,
-              )}
-            </strong>
+        {Number(order.delivery || 0) > 0 && (
+          <div style={styles.breakdownRow}>
+            <span>Delivery</span>
+            <strong>{money(order.delivery)}</strong>
           </div>
         )}
 
-        {Number(
-          order.serviceFee || 0,
-        ) > 0 && (
-          <div
-            style={
-              styles.breakdownRow
-            }
-          >
-            <span>
-              Service fee
-            </span>
-
-            <strong>
-              {money(
-                order.serviceFee,
-              )}
-            </strong>
+        {Number(order.serviceFee || 0) > 0 && (
+          <div style={styles.breakdownRow}>
+            <span>Service fee</span>
+            <strong>{money(order.serviceFee)}</strong>
           </div>
         )}
 
-        <div
-          style={
-            styles.breakdownTotal
-          }
-        >
-          <span>
-            Order total
-          </span>
-
-          <strong>
-            {money(
-              order.total,
-            )}
-          </strong>
+        <div style={styles.breakdownTotal}>
+          <span>Order total</span>
+          <strong>{money(order.total)}</strong>
         </div>
       </div>
     </>
   );
 }
 
+/*
+=========================================================
+DASHBOARD
+=========================================================
+*/
+
 export default function RestaurantDashboard() {
   const {
     restaurant,
     user,
     orders: shopifyOrders,
+    orderLoadError = "",
     paidThisMonth = 0,
+    paymentSummary,
+    payoutHistory = [],
   } = useLoaderData();
 
-  const navigation =
-    useNavigation();
+  const navigation = useNavigation();
+  const revalidator = useRevalidator();
+  const orderFetcher = useFetcher();
 
-  const revalidator =
-    useRevalidator();
+  const [activeTab, setActiveTab] = useState("orders");
 
-  const orderFetcher =
-    useFetcher();
-
-  const [
-    activeTab,
-    setActiveTab,
-  ] = useState("orders");
-
-  const [
-    orders,
-    setOrders,
-  ] = useState(
+  const [orders, setOrders] = useState(
     shopifyOrders || [],
   );
 
-  const [
-    soundEnabled,
-    setSoundEnabled,
-  ] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
 
-  const [
-    soundUnlocked,
-    setSoundUnlocked,
-  ] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] =
+    useState(null);
 
-  const [
-    selectedOrderId,
-    setSelectedOrderId,
-  ] = useState(null);
+  const [pendingOrderAction, setPendingOrderAction] =
+    useState(null);
 
-  const [
-    pendingOrderAction,
-    setPendingOrderAction,
-  ] = useState(null);
-
-  const audioContextRef =
-    useRef(null);
-
-  const alarmTimerRef =
-    useRef(null);
-
-  const soundEnabledRef =
-    useRef(true);
+  const audioContextRef = useRef(null);
+  const alarmTimerRef = useRef(null);
+  const soundEnabledRef = useRef(true);
 
   /*
   =========================================================
   AUTO REFRESH
   =========================================================
-
-  Don't start another revalidation while an order decision
-  is being sent or while a loader refresh is already running.
   */
 
   useEffect(() => {
-    const interval =
-      setInterval(() => {
-        if (
-          orderFetcher.state ===
-            "idle" &&
-          revalidator.state ===
-            "idle"
-        ) {
-          revalidator.revalidate();
-        }
-      }, 5000);
+    const interval = setInterval(() => {
+      if (
+        orderFetcher.state === "idle" &&
+        revalidator.state === "idle"
+      ) {
+        revalidator.revalidate();
+      }
+    }, 5000);
 
-    return () =>
-      clearInterval(interval);
+    return () => clearInterval(interval);
   }, [
     orderFetcher.state,
     revalidator,
@@ -2725,22 +1863,18 @@ export default function RestaurantDashboard() {
 
   /*
   =========================================================
-  SYNC LOADER ORDERS
+  SYNC ORDERS
   =========================================================
-
-  While an Accept / Reject is pending, don't let a
-  background refresh overwrite the immediate local status.
   */
 
   useEffect(() => {
-    if (!pendingOrderAction) {
-      setOrders(
-        shopifyOrders || [],
-      );
+    if (!pendingOrderAction && !orderLoadError) {
+      setOrders(shopifyOrders || []);
     }
   }, [
     shopifyOrders,
     pendingOrderAction,
+    orderLoadError,
   ]);
 
   /*
@@ -2752,47 +1886,31 @@ export default function RestaurantDashboard() {
   useEffect(() => {
     if (
       !pendingOrderAction ||
-      orderFetcher.state !==
-        "idle" ||
+      orderFetcher.state !== "idle" ||
       !orderFetcher.data
     ) {
       return;
     }
 
-    if (
-      orderFetcher.data.success ===
-      true
-    ) {
-      setPendingOrderAction(
-        null,
-      );
-
+    if (orderFetcher.data.success === true) {
+      setPendingOrderAction(null);
       revalidator.revalidate();
-
       return;
     }
 
-    if (
-      orderFetcher.data.success ===
-      false
-    ) {
-      setOrders(
-        (currentOrders) =>
-          currentOrders.map(
-            (order) =>
-              order.id ===
-              pendingOrderAction.orderId
-                ? {
-                    ...order,
-                    status: "new",
-                  }
-                : order,
-          ),
+    if (orderFetcher.data.success === false) {
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === pendingOrderAction.orderId
+            ? {
+                ...order,
+                status: "new",
+              }
+            : order,
+        ),
       );
 
-      setPendingOrderAction(
-        null,
-      );
+      setPendingOrderAction(null);
 
       window.alert(
         orderFetcher.data.message ||
@@ -2806,129 +1924,114 @@ export default function RestaurantDashboard() {
     revalidator,
   ]);
 
+  /*
+  =========================================================
+  SOUND SETTINGS
+  =========================================================
+  */
+
   useEffect(() => {
     try {
-      const savedSetting =
-        window.localStorage.getItem(
-          "mdh_order_sound",
-        );
+      const savedSetting = window.localStorage.getItem(
+        "mdh_order_sound",
+      );
 
-      if (
-        savedSetting === "off"
-      ) {
+      if (savedSetting === "off") {
         setSoundEnabled(false);
-
-        soundEnabledRef.current =
-          false;
+        soundEnabledRef.current = false;
       } else {
         setSoundEnabled(true);
-
-        soundEnabledRef.current =
-          true;
+        soundEnabledRef.current = true;
       }
     } catch {
       setSoundEnabled(true);
-
-      soundEnabledRef.current =
-        true;
+      soundEnabledRef.current = true;
     }
   }, []);
 
-  const restaurantOrders =
-    orders.filter(
-      (order) =>
-        normaliseText(
-          order.restaurantId,
-        ) ===
-        normaliseText(
-          restaurant.restaurantId,
-        ),
-    );
+  const restaurantOrders = orders.filter(
+    (order) =>
+      normaliseText(order.restaurantId) ===
+      normaliseText(restaurant.restaurantId),
+  );
 
-  const newOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status === "new",
-    );
+  const newOrders = restaurantOrders.filter(
+    (order) => order.status === "new",
+  );
 
-  const acceptedOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status ===
-        "accepted",
-    );
+  const acceptedOrders = restaurantOrders.filter(
+    (order) => order.status === "accepted",
+  );
 
-  const rejectedOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status ===
-        "rejected",
-    );
+  const rejectedOrders = restaurantOrders.filter(
+    (order) => order.status === "rejected",
+  );
 
-  const previousOrders =
-    [
-      ...acceptedOrders,
-      ...rejectedOrders,
-    ].sort(
-      (a, b) =>
-        new Date(
-          b.createdAt,
-        ).getTime() -
-        new Date(
-          a.createdAt,
-        ).getTime(),
-    );
+  const previousOrders = [
+    ...acceptedOrders,
+    ...rejectedOrders,
+  ].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() -
+      new Date(a.createdAt).getTime(),
+  );
 
   const selectedOrder =
     restaurantOrders.find(
-      (order) =>
-        order.id ===
-        selectedOrderId,
+      (order) => order.id === selectedOrderId,
     ) || null;
 
-  const paymentWeek =
-    getCurrentPaymentWeek();
+  const paymentWeek = getCurrentPaymentWeek();
 
-  const weeklyAcceptedOrders =
-    acceptedOrders.filter(
-      (order) => {
-        const orderDate =
-          londonDateKey(
-            order.createdAt,
-          );
+  /*
+  =========================================================
+  VERIFIED SHOPIFY PAYMENT TOTALS
 
-        return (
-          orderDate >=
-            paymentWeek.startKey &&
-          orderDate <=
-            paymentWeek.endKey
-        );
-      },
-    );
+  Do not calculate earnings from the visible order list.
+  Use the server's captured-payment summary.
+  =========================================================
+  */
 
-  const firstNewOrder =
-    newOrders[0];
+  const acceptedFoodSales = Number(
+    paymentSummary?.foodSales || 0,
+  );
 
-  const isSaving =
-    navigation.state ===
-    "submitting";
+  const deliveryIncome = Number(
+    paymentSummary?.deliveryIncome || 0,
+  );
+
+  const commission = Number(
+    paymentSummary?.commission || 0,
+  );
+
+  const restaurantEarnings = Number(
+    paymentSummary?.restaurantEarnings || 0,
+  );
+
+  const serviceFees = Number(
+    paymentSummary?.serviceFees || 0,
+  );
+
+  const verifiedAcceptedOrderCount = Number(
+    paymentSummary?.acceptedOrderCount || 0,
+  );
+
+  const firstNewOrder = newOrders[0];
+
+  const isSaving = navigation.state === "submitting";
 
   const orderActionSaving =
-    orderFetcher.state !==
-      "idle" ||
-    Boolean(
-      pendingOrderAction,
-    );
+    orderFetcher.state !== "idle" ||
+    Boolean(pendingOrderAction);
 
-  function handleOrderDecision(
-    order,
-    action,
-  ) {
-    if (!order) {
-      return;
-    }
+  /*
+  =========================================================
+  ACCEPT / REJECT
+  =========================================================
+  */
 
-    if (orderActionSaving) {
+  function handleOrderDecision(order, action) {
+    if (!order || orderActionSaving) {
       return;
     }
 
@@ -2937,44 +2040,23 @@ export default function RestaurantDashboard() {
         ? "accepted"
         : "rejected";
 
-    /*
-    Mark this order as pending BEFORE sending the request.
-    */
-
     setPendingOrderAction({
-      orderId:
-        order.id,
-
+      orderId: order.id,
       action,
     });
 
-    /*
-    Immediately change the order locally.
-
-    This means ONE PRESS immediately moves it out of
-    New Orders and into Previous Orders.
-    */
-
-    setOrders(
-      (currentOrders) =>
-        currentOrders.map(
-          (currentOrder) =>
-            currentOrder.id ===
-            order.id
-              ? {
-                  ...currentOrder,
-                  status,
-                }
-              : currentOrder,
-        ),
+    setOrders((currentOrders) =>
+      currentOrders.map((currentOrder) =>
+        currentOrder.id === order.id
+          ? {
+              ...currentOrder,
+              status,
+            }
+          : currentOrder,
+      ),
     );
 
-    /*
-    Submit the actual decision to the server/database.
-    */
-
-    const formData =
-      new FormData();
+    const formData = new FormData();
 
     formData.set(
       "intent",
@@ -2983,34 +2065,24 @@ export default function RestaurantDashboard() {
         : "reject-order",
     );
 
-    formData.set(
-      "shopifyOrderId",
-      order.id,
-    );
+    formData.set("shopifyOrderId", order.id);
+    formData.set("orderNumber", order.orderNumber);
 
-    formData.set(
-      "orderNumber",
-      order.orderNumber,
-    );
-
-    orderFetcher.submit(
-      formData,
-      {
-        method: "post",
-      },
-    );
+    orderFetcher.submit(formData, {
+      method: "post",
+    });
   }
 
-  function stopAlarm() {
-    if (
-      alarmTimerRef.current
-    ) {
-      clearInterval(
-        alarmTimerRef.current,
-      );
+  /*
+  =========================================================
+  ORDER ALARM
+  =========================================================
+  */
 
-      alarmTimerRef.current =
-        null;
+  function stopAlarm() {
+    if (alarmTimerRef.current) {
+      clearInterval(alarmTimerRef.current);
+      alarmTimerRef.current = null;
     }
   }
 
@@ -3024,34 +2096,21 @@ export default function RestaurantDashboard() {
         return;
       }
 
-      if (
-        !audioContextRef.current
-      ) {
-        audioContextRef.current =
-          new AudioContext();
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
       }
 
-      const context =
-        audioContextRef.current;
+      const context = audioContextRef.current;
 
-      if (
-        context.state ===
-        "suspended"
-      ) {
+      if (context.state === "suspended") {
         context.resume();
       }
 
-      const oscillator =
-        context.createOscillator();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
 
-      const gain =
-        context.createGain();
-
-      oscillator.type =
-        "square";
-
-      oscillator.frequency.value =
-        880;
+      oscillator.type = "square";
+      oscillator.frequency.value = 880;
 
       gain.gain.setValueAtTime(
         0.9,
@@ -3060,35 +2119,22 @@ export default function RestaurantDashboard() {
 
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        context.currentTime +
-          0.7,
+        context.currentTime + 0.7,
       );
 
       oscillator.connect(gain);
-
-      gain.connect(
-        context.destination,
-      );
+      gain.connect(context.destination);
 
       oscillator.start();
-
-      oscillator.stop(
-        context.currentTime +
-          0.7,
-      );
+      oscillator.stop(context.currentTime + 0.7);
     } catch (error) {
-      console.log(
-        "Alarm unavailable",
-        error,
-      );
+      console.log("Alarm unavailable", error);
     }
   }
 
   function enableSound() {
     setSoundEnabled(true);
-
-    soundEnabledRef.current =
-      true;
+    soundEnabledRef.current = true;
 
     try {
       window.localStorage.setItem(
@@ -3104,24 +2150,17 @@ export default function RestaurantDashboard() {
         window.AudioContext ||
         window.webkitAudioContext;
 
-      if (
-        AudioContext &&
-        !audioContextRef.current
-      ) {
-        audioContextRef.current =
-          new AudioContext();
+      if (AudioContext && !audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
       }
 
       if (
-        audioContextRef.current
-          ?.state ===
-        "suspended"
+        audioContextRef.current?.state === "suspended"
       ) {
         audioContextRef.current.resume();
       }
 
       setSoundUnlocked(true);
-
       makeAlarmSound();
     } catch (error) {
       console.log(
@@ -3133,9 +2172,7 @@ export default function RestaurantDashboard() {
 
   function disableSound() {
     setSoundEnabled(false);
-
-    soundEnabledRef.current =
-      false;
+    soundEnabledRef.current = false;
 
     try {
       window.localStorage.setItem(
@@ -3151,9 +2188,7 @@ export default function RestaurantDashboard() {
 
   useEffect(() => {
     function unlockOrderSound() {
-      if (
-        !soundEnabledRef.current
-      ) {
+      if (!soundEnabledRef.current) {
         return;
       }
 
@@ -3166,20 +2201,13 @@ export default function RestaurantDashboard() {
           return;
         }
 
-        if (
-          !audioContextRef.current
-        ) {
-          audioContextRef.current =
-            new AudioContext();
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext();
         }
 
-        const context =
-          audioContextRef.current;
+        const context = audioContextRef.current;
 
-        if (
-          context.state ===
-          "suspended"
-        ) {
+        if (context.state === "suspended") {
           context.resume();
         }
 
@@ -3235,57 +2263,23 @@ export default function RestaurantDashboard() {
     ) {
       makeAlarmSound();
 
-      alarmTimerRef.current =
-        setInterval(() => {
-          makeAlarmSound();
-        }, 1500);
+      alarmTimerRef.current = setInterval(() => {
+        makeAlarmSound();
+      }, 1500);
     }
 
-    return () =>
-      stopAlarm();
+    return () => stopAlarm();
   }, [
     newOrders.length,
     soundEnabled,
     soundUnlocked,
   ]);
 
-  const acceptedFoodSales =
-    weeklyAcceptedOrders.reduce(
-      (total, order) =>
-        total +
-        Number(
-          order.foodTotal || 0,
-        ),
-      0,
-    );
-
-  const deliveryIncome =
-    weeklyAcceptedOrders.reduce(
-      (total, order) =>
-        total +
-        Number(
-          order.delivery || 0,
-        ),
-      0,
-    );
-
-  const commission =
-    acceptedFoodSales * 0.1;
-
-  const restaurantEarnings =
-    acceptedFoodSales * 0.9 +
-    deliveryIncome;
-
-  
-  const serviceFees =
-    weeklyAcceptedOrders.reduce(
-      (total, order) =>
-        total +
-        Number(
-          order.serviceFee || 0,
-        ),
-      0,
-    );
+  /*
+  =========================================================
+  PAGE
+  =========================================================
+  */
 
   return (
     <main style={styles.page}>
@@ -3293,28 +2287,17 @@ export default function RestaurantDashboard() {
         <header style={styles.header}>
           <div>
             <img
-  src="/meal-deal-hub-logo.png"
-  alt="Meal Deal Hub"
-  style={styles.logo}
-/>
+              src="/meal-deal-hub-logo.png"
+              alt="Meal Deal Hub"
+              style={styles.logo}
+            />
 
-            <h1
-              style={
-                styles.restaurantName
-              }
-            >
+            <h1 style={styles.restaurantName}>
               {restaurant.name}
             </h1>
 
-            <div
-              style={
-                styles.location
-              }
-            >
-              Restaurant ID:{" "}
-              {
-                restaurant.restaurantId
-              }
+            <div style={styles.location}>
+              Restaurant ID: {restaurant.restaurantId}
             </div>
           </div>
 
@@ -3331,14 +2314,9 @@ export default function RestaurantDashboard() {
           </div>
         </header>
 
-        {activeTab ===
-          "orders" && (
+        {activeTab === "orders" && (
           <>
-            <section
-              style={
-                styles.controls
-              }
-            >
+            <section style={styles.controls}>
               <Form method="post">
                 <input
                   type="hidden"
@@ -3370,21 +2348,13 @@ export default function RestaurantDashboard() {
               {soundEnabled ? (
                 <button
                   type="button"
-                  style={
-                    styles.soundOnButton
-                  }
-                  onClick={
-                    disableSound
-                  }
+                  style={styles.soundOnButton}
+                  onClick={disableSound}
                 >
                   🔊 ORDER SOUND ON
 
                   {!soundUnlocked && (
-                    <span
-                      style={
-                        styles.soundHint
-                      }
-                    >
+                    <span style={styles.soundHint}>
                       Activates on first tap
                     </span>
                   )}
@@ -3392,60 +2362,40 @@ export default function RestaurantDashboard() {
               ) : (
                 <button
                   type="button"
-                  style={
-                    styles.orangeButton
-                  }
-                  onClick={
-                    enableSound
-                  }
+                  style={styles.orangeButton}
+                  onClick={enableSound}
                 >
                   🔇 ORDER SOUND OFF
                 </button>
               )}
             </section>
 
+            {orderLoadError && (
+              <section style={styles.errorPanel}>
+                {orderLoadError}
+              </section>
+            )}
+
             {firstNewOrder ? (
-              <section
-                style={
-                  styles.newOrder
-                }
-              >
-                <div
-                  style={
-                    styles.newLabel
-                  }
-                >
+              <section style={styles.newOrder}>
+                <div style={styles.newLabel}>
                   🔔 NEW ORDER
                 </div>
 
-                <OrderDetails
-                  order={
-                    firstNewOrder
-                  }
-                />
+                <OrderDetails order={firstNewOrder} />
 
-                <div
-                  style={
-                    styles.actions
-                  }
-                >
+                <div style={styles.actions}>
                   <button
                     type="button"
-                    disabled={
-                      orderActionSaving
-                    }
+                    disabled={orderActionSaving}
                     style={{
                       ...styles.acceptButton,
-
-                      opacity:
-                        orderActionSaving
-                          ? 0.6
-                          : 1,
-
-                      cursor:
-                        orderActionSaving
-                          ? "not-allowed"
-                          : "pointer",
+                      opacity: orderActionSaving
+                        ? 0.6
+                        : 1,
+                      cursor: orderActionSaving
+                        ? "not-allowed"
+                        : "pointer",
                     }}
                     onClick={() =>
                       handleOrderDecision(
@@ -3454,33 +2404,25 @@ export default function RestaurantDashboard() {
                       )
                     }
                   >
-                    {pendingOrderAction
-                      ?.orderId ===
-                        firstNewOrder.id &&
-                    pendingOrderAction
-                      ?.action ===
-                        "accept"
+                    {pendingOrderAction?.orderId ===
+                      firstNewOrder.id &&
+                    pendingOrderAction?.action ===
+                      "accept"
                       ? "ACCEPTING..."
                       : "✓ ACCEPT ORDER"}
                   </button>
 
                   <button
                     type="button"
-                    disabled={
-                      orderActionSaving
-                    }
+                    disabled={orderActionSaving}
                     style={{
                       ...styles.rejectButton,
-
-                      opacity:
-                        orderActionSaving
-                          ? 0.6
-                          : 1,
-
-                      cursor:
-                        orderActionSaving
-                          ? "not-allowed"
-                          : "pointer",
+                      opacity: orderActionSaving
+                        ? 0.6
+                        : 1,
+                      cursor: orderActionSaving
+                        ? "not-allowed"
+                        : "pointer",
                     }}
                     onClick={() =>
                       handleOrderDecision(
@@ -3489,387 +2431,295 @@ export default function RestaurantDashboard() {
                       )
                     }
                   >
-                    {pendingOrderAction
-                      ?.orderId ===
-                        firstNewOrder.id &&
-                    pendingOrderAction
-                      ?.action ===
-                        "reject"
+                    {pendingOrderAction?.orderId ===
+                      firstNewOrder.id &&
+                    pendingOrderAction?.action ===
+                      "reject"
                       ? "REJECTING..."
                       : "× REJECT ORDER"}
                   </button>
                 </div>
               </section>
             ) : (
-              <section
-                style={
-                  styles.waiting
-                }
-              >
-                <div
-                  style={
-                    styles.tick
-                  }
-                >
-                  ✓
-                </div>
+              <section style={styles.waiting}>
+                <div style={styles.tick}>✓</div>
 
-                <h2>
-                  No New Orders
-                </h2>
+                <h2>No New Orders</h2>
 
                 <p>
-                  New orders will
-                  appear here
+                  New orders will appear here
                   automatically.
                 </p>
               </section>
             )}
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.titleRow
-                }
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                  }}
-                >
+            <section style={styles.panel}>
+              <div style={styles.titleRow}>
+                <h2 style={{ margin: 0 }}>
                   Previous Orders
                 </h2>
 
-                <span
-                  style={
-                    styles.count
-                  }
-                >
-                  {
-                    previousOrders.length
-                  }
+                <span style={styles.count}>
+                  {previousOrders.length}
                 </span>
               </div>
 
-              {previousOrders.length ===
-              0 ? (
-                <p
-                  style={
-                    styles.greyText
-                  }
-                >
+              {previousOrders.length === 0 ? (
+                <p style={styles.greyText}>
                   No previous orders.
                 </p>
               ) : (
-                previousOrders.map(
-                  (order) => (
-                    <button
-                      type="button"
-                      key={order.id}
-                      style={
-                        styles.previousOrderButton
-                      }
-                      onClick={() =>
-                        setSelectedOrderId(
-                          order.id,
-                        )
-                      }
-                    >
-                      <div
-                        style={{
-                          textAlign:
-                            "left",
-                        }}
-                      >
-                        <strong
-                          style={{
-                            fontSize:
-                              20,
-                          }}
-                        >
-                          {
-                            order.orderNumber
-                          }
-                        </strong>
+                previousOrders.map((order) => (
+                  <button
+                    type="button"
+                    key={order.id}
+                    style={styles.previousOrderButton}
+                    onClick={() =>
+                      setSelectedOrderId(order.id)
+                    }
+                  >
+                    <div style={{ textAlign: "left" }}>
+                      <strong style={{ fontSize: 20 }}>
+                        {order.orderNumber}
+                      </strong>
 
-                        <div
-                          style={
-                            styles.greyText
-                          }
-                        >
-                          {
-                            order.dateTime
-                          }
-                        </div>
-
-                        <div
-                          style={
-                            styles.previousOrderType
-                          }
-                        >
-                          {order.orderType ===
-                          "pickup"
-                            ? "PICKUP"
-                            : "DELIVERY"}
-                        </div>
+                      <div style={styles.greyText}>
+                        {order.dateTime}
                       </div>
 
                       <div
+                        style={styles.previousOrderType}
+                      >
+                        {order.orderType === "pickup"
+                          ? "PICKUP"
+                          : "DELIVERY"}
+                      </div>
+                    </div>
+
+                    <div style={styles.previousOrderRight}>
+                      <strong>
+                        {money(order.total)}
+                      </strong>
+
+                      <span
                         style={
-                          styles.previousOrderRight
+                          order.status === "accepted"
+                            ? styles.acceptedBadge
+                            : styles.rejectedBadge
                         }
                       >
-                        <strong>
-                          {money(
-                            order.total,
-                          )}
-                        </strong>
+                        {String(
+                          order.status,
+                        ).toUpperCase()}
+                      </span>
 
-                        <span
-                          style={
-                            order.status ===
-                            "accepted"
-                              ? styles.acceptedBadge
-                              : styles.rejectedBadge
-                          }
-                        >
-                          {String(
-                            order.status,
-                          ).toUpperCase()}
-                        </span>
-
-                        <span
-                          style={
-                            styles.viewOrder
-                          }
-                        >
-                          VIEW ›
-                        </span>
-                      </div>
-                    </button>
-                  ),
-                )
+                      <span style={styles.viewOrder}>
+                        VIEW ›
+                      </span>
+                    </div>
+                  </button>
+                ))
               )}
             </section>
           </>
         )}
 
-        {activeTab ===
-          "payments" && (
+        {activeTab === "payments" && (
           <>
-            <section
-              style={
-                styles.pageHeading
-              }
-            >
-              <h2
-                style={{
-                  margin: 0,
-                }}
-              >
+            <section style={styles.pageHeading}>
+              <h2 style={{ margin: 0 }}>
                 Payments
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Your Meal Deal Hub
-                earnings and payouts.
+              <p style={styles.greyText}>
+                Your Meal Deal Hub earnings and payouts.
               </p>
             </section>
 
             <div style={styles.grid}>
               <PaymentCard
                 title="MEAL DEAL SALES"
-                value={money(
-                  acceptedFoodSales,
-                )}
+                value={money(acceptedFoodSales)}
               />
 
               <PaymentCard
                 title="DELIVERY"
-                value={money(
-                  deliveryIncome,
-                )}
+                value={money(deliveryIncome)}
               />
 
               <PaymentCard
                 title="COMMISSION"
-                value={money(
-                  commission,
-                )}
+                value={money(commission)}
               />
 
               <PaymentCard
                 title="YOU RECEIVE"
-                value={money(
-                  restaurantEarnings,
-                )}
+                value={money(restaurantEarnings)}
               />
+
               <PaymentCard
-  title="PAID THIS MONTH"
-  value={money(paidThisMonth)}
-/>
+                title="PAID THIS MONTH"
+                value={money(paidThisMonth)}
+              />
             </div>
 
-            <section
-              style={
-                styles.payout
-              }
-            >
-              <div
-                style={
-                  styles.smallWhite
-                }
-              >
+            <section style={styles.payout}>
+              <div style={styles.smallWhite}>
                 NEXT PAYOUT
               </div>
 
-              <div
-                style={
-                  styles.payoutAmount
-                }
-              >
-                {money(
-                  restaurantEarnings,
-                )}
+              <div style={styles.payoutAmount}>
+                {money(restaurantEarnings)}
               </div>
 
               <p>
                 Payout period:{" "}
                 <strong>
-                  {
-                    paymentWeek.startLabel
-                  }
+                  {paymentWeek.startLabel}
                   {" – "}
-                  {
-                    paymentWeek.endLabel
-                  }
+                  {paymentWeek.endLabel}
                 </strong>
               </p>
 
               <p>
-                Expected payout:{" "}
+                Standard payout date:{" "}
                 <strong>
-                  Wednesday{" "}
-                  {
-                    paymentWeek.payoutLabel
-                  }
+                  {paymentWeek.payoutLabel}
+                </strong>
+              </p>
+
+              <p style={styles.payoutNote}>
+                The actual payment date may change for
+                bank holidays. Payments are transferred
+                manually after reconciliation.
+              </p>
+
+              <p>
+                Verified accepted orders this week:{" "}
+                <strong>
+                  {verifiedAcceptedOrderCount}
                 </strong>
               </p>
 
               <p>
-                Accepted orders this
-                week:{" "}
+                Meal Deal Hub commission:{" "}
                 <strong>
-                  {
-                    weeklyAcceptedOrders.length
-                  }
+                  {money(commission)}
                 </strong>
               </p>
 
               <p>
-                Meal Deal Hub
-                commission:{" "}
+                Service fees retained by Meal Deal Hub:{" "}
                 <strong>
-                  {money(
-                    commission,
-                  )}
-                </strong>
-              </p>
-
-              <p>
-                Service fees retained
-                by Meal Deal Hub:{" "}
-                <strong>
-                  {money(
-                    serviceFees,
-                  )}
+                  {money(serviceFees)}
                 </strong>
               </p>
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Payout History
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                No completed payouts
-                yet.
-              </p>
+              {payoutHistory.length === 0 ? (
+                <p style={styles.greyText}>
+                  No payout records yet.
+                </p>
+              ) : (
+                payoutHistory.map((payout) => {
+                  const status = String(
+                    payout.status || "",
+                  ).toLowerCase();
+
+                  const isPaid =
+                    status === "paid" ||
+                    status === "completed";
+
+                  return (
+                    <div
+                      key={payout.id}
+                      style={styles.historyRow}
+                    >
+                      <div>
+                        <strong>
+                          {formatPayoutDate(
+                            payout.weekStart,
+                          )}
+                          {" – "}
+                          {formatPayoutDate(
+                            payout.weekEnd,
+                          )}
+                        </strong>
+
+                        <div style={styles.greyText}>
+                          {isPaid
+                            ? "Paid: "
+                            : "Expected: "}
+                          {formatPayoutDate(
+                            payout.payoutDate,
+                          )}
+                        </div>
+
+                        <div style={styles.historyCount}>
+                          {payout.acceptedOrderCount}{" "}
+                          accepted orders
+                        </div>
+                      </div>
+
+                      <div style={styles.historyRight}>
+                        <strong style={styles.historyAmount}>
+                          {money(
+                            payout.restaurantEarnings,
+                          )}
+                        </strong>
+
+                        <span
+                          style={
+                            isPaid
+                              ? styles.acceptedBadge
+                              : styles.expectedBadge
+                          }
+                        >
+                          {isPaid
+                            ? "PAID"
+                            : status.toUpperCase() ||
+                              "EXPECTED"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </section>
           </>
         )}
 
-        {activeTab ===
-          "account" && (
+        {activeTab === "account" && (
           <>
-            <section
-              style={
-                styles.pageHeading
-              }
-            >
-              <h2
-                style={{
-                  margin: 0,
-                }}
-              >
+            <section style={styles.pageHeading}>
+              <h2 style={{ margin: 0 }}>
                 Restaurant Account
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Your Meal Deal Hub
-                restaurant account.
+              <p style={styles.greyText}>
+                Your Meal Deal Hub restaurant account.
               </p>
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
+            <section style={styles.panel}>
               <AccountRow
                 label="Restaurant"
-                value={
-                  restaurant.name
-                }
+                value={restaurant.name}
               />
 
               <AccountRow
                 label="Restaurant ID"
-                value={
-                  restaurant.restaurantId
-                }
+                value={restaurant.restaurantId}
               />
 
               <AccountRow
                 label="Login email"
-                value={
-                  user.email
-                }
+                value={user.email}
               />
 
               <AccountRow
@@ -3882,25 +2732,14 @@ export default function RestaurantDashboard() {
               />
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Order Status
               </h2>
 
               <p>
-                Temporarily stop new
-                Meal Deal Hub orders
-                whenever your
-                restaurant is too
-                busy.
+                Temporarily stop new Meal Deal Hub orders
+                whenever your restaurant is too busy.
               </p>
 
               <Form method="post">
@@ -3932,33 +2771,18 @@ export default function RestaurantDashboard() {
               </Form>
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                }}
-              >
+            <section style={styles.panel}>
+              <h2 style={{ marginTop: 0 }}>
                 Sign Out
               </h2>
 
-              <p
-                style={
-                  styles.greyText
-                }
-              >
-                Sign out of this
-                restaurant terminal.
+              <p style={styles.greyText}>
+                Sign out of this restaurant terminal.
               </p>
 
               <a
                 href="/restaurant/logout"
-                style={
-                  styles.logoutButton
-                }
+                style={styles.logoutButton}
               >
                 LOG OUT
               </a>
@@ -3966,21 +2790,12 @@ export default function RestaurantDashboard() {
           </>
         )}
 
-        <nav
-          style={
-            styles.bottomNav
-          }
-        >
+        <nav style={styles.bottomNav}>
           <button
             type="button"
-            onClick={() =>
-              setActiveTab(
-                "orders",
-              )
-            }
+            onClick={() => setActiveTab("orders")}
             style={
-              activeTab ===
-              "orders"
+              activeTab === "orders"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -3990,14 +2805,9 @@ export default function RestaurantDashboard() {
 
           <button
             type="button"
-            onClick={() =>
-              setActiveTab(
-                "payments",
-              )
-            }
+            onClick={() => setActiveTab("payments")}
             style={
-              activeTab ===
-              "payments"
+              activeTab === "payments"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -4007,14 +2817,9 @@ export default function RestaurantDashboard() {
 
           <button
             type="button"
-            onClick={() =>
-              setActiveTab(
-                "account",
-              )
-            }
+            onClick={() => setActiveTab("account")}
             style={
-              activeTab ===
-              "account"
+              activeTab === "account"
                 ? styles.activeNav
                 : styles.navButton
             }
@@ -4025,61 +2830,39 @@ export default function RestaurantDashboard() {
 
         {selectedOrder && (
           <div
-            style={
-              styles.modalOverlay
-            }
-            onClick={() =>
-              setSelectedOrderId(
-                null,
-              )
-            }
+            style={styles.modalOverlay}
+            onClick={() => setSelectedOrderId(null)}
           >
             <div
-              style={
-                styles.orderModal
-              }
+              style={styles.orderModal}
               onClick={(event) =>
                 event.stopPropagation()
               }
             >
               <button
                 type="button"
-                style={
-                  styles.closeButton
-                }
+                style={styles.closeButton}
                 onClick={() =>
-                  setSelectedOrderId(
-                    null,
-                  )
+                  setSelectedOrderId(null)
                 }
               >
                 ×
               </button>
 
-              <div
-                style={
-                  styles.modalHeading
-                }
-              >
+              <div style={styles.modalHeading}>
                 ORDER DETAILS
               </div>
 
               <OrderDetails
-                order={
-                  selectedOrder
-                }
+                order={selectedOrder}
                 showStatus={true}
               />
 
               <button
                 type="button"
-                style={
-                  styles.modalDoneButton
-                }
+                style={styles.modalDoneButton}
                 onClick={() =>
-                  setSelectedOrderId(
-                    null,
-                  )
+                  setSelectedOrderId(null)
                 }
               >
                 CLOSE
@@ -4092,55 +2875,43 @@ export default function RestaurantDashboard() {
   );
 }
 
-function PaymentCard({
-  title,
-  value,
-}) {
+/*
+=========================================================
+SMALL COMPONENTS
+=========================================================
+*/
+
+function PaymentCard({ title, value }) {
   return (
     <div style={styles.card}>
-      <div
-        style={
-          styles.cardTitle
-        }
-      >
+      <div style={styles.cardTitle}>
         {title}
       </div>
 
-      <div
-        style={
-          styles.cardValue
-        }
-      >
+      <div style={styles.cardValue}>
         {value}
       </div>
     </div>
   );
 }
 
-function AccountRow({
-  label,
-  value,
-}) {
+function AccountRow({ label, value }) {
   return (
-    <div
-      style={
-        styles.accountRow
-      }
-    >
-      <div
-        style={
-          styles.greyText
-        }
-      >
+    <div style={styles.accountRow}>
+      <div style={styles.greyText}>
         {label}
       </div>
 
-      <strong>
-        {value}
-      </strong>
+      <strong>{value}</strong>
     </div>
   );
 }
+
+/*
+=========================================================
+STYLES
+=========================================================
+*/
 
 const styles = {
   page: {
@@ -4170,14 +2941,14 @@ const styles = {
     borderBottom: "5px solid #FFD400",
   },
 
-logo: {
-  display: "block",
-  width: 95,
-  height: 95,
-  objectFit: "contain",
-  borderRadius: 18,
-  marginBottom: 12,
-},
+  logo: {
+    display: "block",
+    width: 95,
+    height: 95,
+    objectFit: "contain",
+    borderRadius: 18,
+    marginBottom: 12,
+  },
 
   restaurantName: {
     margin: "0 0 6px",
@@ -4215,6 +2986,16 @@ logo: {
     flexWrap: "wrap",
     marginBottom: 15,
     border: "1px solid #DDDDDD",
+  },
+
+  errorPanel: {
+    background: "#FDECEC",
+    color: "#B42318",
+    border: "1px solid #F5B9B4",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 15,
+    fontWeight: 700,
   },
 
   darkButton: {
@@ -4514,6 +3295,16 @@ logo: {
     fontSize: 12,
   },
 
+  expectedBadge: {
+    display: "inline-block",
+    background: "#FFF9D6",
+    color: "#111111",
+    padding: "8px 12px",
+    borderRadius: 30,
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns:
@@ -4563,6 +3354,40 @@ logo: {
     fontSize: 40,
     fontWeight: 900,
     margin: "10px 0 20px",
+  },
+
+  payoutNote: {
+    color: "#CCCCCC",
+    fontSize: 13,
+    lineHeight: 1.6,
+  },
+
+  historyRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    flexWrap: "wrap",
+    padding: "18px 0",
+    borderTop: "1px solid #EEEEEE",
+  },
+
+  historyRight: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+
+  historyAmount: {
+    fontSize: 23,
+    color: "#111111",
+  },
+
+  historyCount: {
+    fontSize: 12,
+    color: "#666666",
+    marginTop: 5,
   },
 
   accountRow: {

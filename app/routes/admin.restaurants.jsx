@@ -3,6 +3,7 @@ import {
   redirect,
   useActionData,
   useLoaderData,
+  useNavigation,
 } from "react-router";
 import { useEffect, useState } from "react";
 import crypto from "node:crypto";
@@ -11,14 +12,28 @@ import db from "../db.server";
 const ADMIN_COOKIE = "mdh_admin_session";
 const ACTIVATION_DAYS = 7;
 
-// ======================================================
-// MEAL DEAL HUB BRAND COLOURS
-// ======================================================
-
 const BLACK = "#111111";
 const YELLOW = "#FFD400";
 const WHITE = "#FFFFFF";
 const GREY = "#666666";
+
+function money(value) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(Number(value || 0));
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
 
 function getAdminSecret() {
   return (
@@ -28,8 +43,7 @@ function getAdminSecret() {
 }
 
 function verifyAdminSession(request) {
-  const cookieHeader =
-    request.headers.get("Cookie") || "";
+  const cookieHeader = request.headers.get("Cookie") || "";
 
   const cookies = Object.fromEntries(
     cookieHeader
@@ -39,9 +53,7 @@ function verifyAdminSession(request) {
       .map((cookie) => {
         const index = cookie.indexOf("=");
 
-        if (index === -1) {
-          return [cookie, ""];
-        }
+        if (index === -1) return [cookie, ""];
 
         return [
           cookie.slice(0, index),
@@ -52,15 +64,11 @@ function verifyAdminSession(request) {
 
   const session = cookies[ADMIN_COOKIE];
 
-  if (!session) {
-    return false;
-  }
+  if (!session) return false;
 
   const separator = session.lastIndexOf(".");
 
-  if (separator === -1) {
-    return false;
-  }
+  if (separator === -1) return false;
 
   const value = session.slice(0, separator);
   const signature = session.slice(separator + 1);
@@ -85,7 +93,7 @@ function verifyAdminSession(request) {
 }
 
 // ======================================================
-// LOAD RESTAURANTS
+// LOADER
 // ======================================================
 
 export async function loader({ request }) {
@@ -111,6 +119,27 @@ export async function loader({ request }) {
         },
       },
 
+      payouts: {
+        orderBy: {
+          weekStart: "desc",
+        },
+        take: 52,
+        select: {
+          id: true,
+          weekStart: true,
+          weekEnd: true,
+          payoutDate: true,
+          foodSales: true,
+          deliveryIncome: true,
+          commission: true,
+          serviceFees: true,
+          restaurantEarnings: true,
+          acceptedOrderCount: true,
+          status: true,
+          updatedAt: true,
+        },
+      },
+
       _count: {
         select: {
           orderDecisions: true,
@@ -120,13 +149,47 @@ export async function loader({ request }) {
     },
   });
 
+  const allPayouts = await db.restaurantPayout.findMany({
+    select: {
+      restaurantEarnings: true,
+      status: true,
+    },
+  });
+
+  const outstandingTotal = allPayouts
+    .filter(
+      (payout) =>
+        payout.status !== "paid" &&
+        payout.status !== "completed",
+    )
+    .reduce(
+      (total, payout) =>
+        total + Number(payout.restaurantEarnings),
+      0,
+    );
+
+  const paidTotal = allPayouts
+    .filter(
+      (payout) =>
+        payout.status === "paid" ||
+        payout.status === "completed",
+    )
+    .reduce(
+      (total, payout) =>
+        total + Number(payout.restaurantEarnings),
+      0,
+    );
+
   return {
     restaurants,
+    outstandingTotal,
+    paidTotal,
+    payoutCount: allPayouts.length,
   };
 }
 
 // ======================================================
-// RESTAURANT MANAGEMENT ACTIONS
+// ACTION
 // ======================================================
 
 export async function action({ request }) {
@@ -141,7 +204,7 @@ export async function action({ request }) {
   );
 
   // ====================================================
-  // ADMIN LOGOUT
+  // LOG OUT
   // ====================================================
 
   if (intent === "logout") {
@@ -164,10 +227,83 @@ export async function action({ request }) {
   }
 
   // ====================================================
-  // EDIT RESTAURANT DETAILS
-  //
-  // Admin can edit activated and non-activated accounts.
-  // Restaurant ID cannot be changed.
+  // MARK PAYOUT AS PAID
+  // ====================================================
+
+  if (intent === "mark-payout-paid") {
+    const payoutId = Number(formData.get("payoutId"));
+
+    if (!Number.isInteger(payoutId) || payoutId <= 0) {
+      return {
+        error: "Invalid payout information.",
+      };
+    }
+
+    const payout = await db.restaurantPayout.findUnique({
+      where: {
+        id: payoutId,
+      },
+      include: {
+        restaurant: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!payout) {
+      return {
+        error: "Payout could not be found.",
+      };
+    }
+
+    if (
+      payout.status === "paid" ||
+      payout.status === "completed"
+    ) {
+      return {
+        error: "This payout has already been marked as paid.",
+      };
+    }
+
+    try {
+      const updated = await db.restaurantPayout.updateMany({
+        where: {
+          id: payoutId,
+          status: payout.status,
+        },
+        data: {
+          status: "paid",
+          payoutDate: new Date(),
+        },
+      });
+
+      if (updated.count !== 1) {
+        return {
+          error:
+            "This payout has already changed. Please refresh the page.",
+        };
+      }
+
+      return {
+        managementSuccess: true,
+        message:
+          `${money(payout.restaurantEarnings)} has been marked as paid ` +
+          `for ${payout.restaurant.name}.`,
+      };
+    } catch (error) {
+      console.error("MARK PAYOUT PAID FAILED:", error);
+
+      return {
+        error:
+          "The payout could not be updated. Please try again.",
+      };
+    }
+  }
+
+  // ====================================================
+  // EDIT RESTAURANT
   // ====================================================
 
   if (intent === "edit-restaurant") {
@@ -227,13 +363,11 @@ export async function action({ request }) {
       where: {
         id: restaurantDbId,
       },
-
       include: {
         users: {
           where: {
             id: restaurantUserId,
           },
-
           select: {
             id: true,
             email: true,
@@ -280,7 +414,6 @@ export async function action({ request }) {
           where: {
             id: restaurantDbId,
           },
-
           data: {
             name,
           },
@@ -290,7 +423,6 @@ export async function action({ request }) {
           where: {
             id: restaurantUserId,
           },
-
           data: {
             email,
           },
@@ -303,10 +435,7 @@ export async function action({ request }) {
         editedRestaurantId: restaurantDbId,
       };
     } catch (error) {
-      console.error(
-        "EDIT RESTAURANT FAILED:",
-        error,
-      );
+      console.error("EDIT RESTAURANT FAILED:", error);
 
       return {
         error:
@@ -350,7 +479,6 @@ export async function action({ request }) {
         where: {
           id: restaurantDbId,
         },
-
         data: {
           active: false,
           acceptingOrders: false,
@@ -361,7 +489,6 @@ export async function action({ request }) {
         where: {
           restaurantId: restaurantDbId,
         },
-
         data: {
           active: false,
         },
@@ -409,7 +536,6 @@ export async function action({ request }) {
         where: {
           id: restaurantDbId,
         },
-
         data: {
           active: true,
           acceptingOrders: true,
@@ -420,7 +546,6 @@ export async function action({ request }) {
         where: {
           restaurantId: restaurantDbId,
         },
-
         data: {
           active: true,
         },
@@ -436,6 +561,12 @@ export async function action({ request }) {
   // ====================================================
   // CREATE RESTAURANT
   // ====================================================
+
+  if (intent !== "create-restaurant") {
+    return {
+      error: "Unknown action.",
+    };
+  }
 
   const name = String(
     formData.get("name") || "",
@@ -538,17 +669,23 @@ export async function action({ request }) {
 }
 
 // ======================================================
-// ADMIN RESTAURANT MANAGEMENT PAGE
+// COMPONENT
 // ======================================================
 
 export default function AdminRestaurants() {
   const actionData = useActionData();
   const loaderData = useLoaderData();
+  const navigation = useNavigation();
 
   const restaurants = loaderData?.restaurants || [];
 
   const [editingRestaurantId, setEditingRestaurantId] =
     useState(null);
+
+  const [expandedPayoutRestaurantId, setExpandedPayoutRestaurantId] =
+    useState(null);
+
+  const isSubmitting = navigation.state === "submitting";
 
   useEffect(() => {
     if (
@@ -562,7 +699,7 @@ export default function AdminRestaurants() {
   return (
     <main style={styles.page}>
       <div style={styles.container}>
-        {/* BLACK HEADER WITH YELLOW BRAND TEXT */}
+        {/* HEADER */}
 
         <div style={styles.topBar}>
           <div style={styles.brand}>
@@ -591,8 +728,8 @@ export default function AdminRestaurants() {
           </h1>
 
           <p style={styles.intro}>
-            Create and manage Meal Deal Hub
-            restaurant accounts.
+            Create and manage restaurant accounts,
+            weekly payouts and bank transfers.
           </p>
         </div>
 
@@ -643,6 +780,40 @@ export default function AdminRestaurants() {
             </p>
           </div>
         )}
+
+        {/* PAYOUT SUMMARY */}
+
+        <section style={styles.summaryGrid}>
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>
+              OUTSTANDING PAYOUTS
+            </div>
+
+            <div style={styles.summaryValue}>
+              {money(loaderData?.outstandingTotal)}
+            </div>
+          </div>
+
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>
+              TOTAL MARKED PAID
+            </div>
+
+            <div style={styles.summaryValue}>
+              {money(loaderData?.paidTotal)}
+            </div>
+          </div>
+
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>
+              PAYOUT RECORDS
+            </div>
+
+            <div style={styles.summaryValue}>
+              {loaderData?.payoutCount || 0}
+            </div>
+          </div>
+        </section>
 
         {/* ADD RESTAURANT */}
 
@@ -701,6 +872,7 @@ export default function AdminRestaurants() {
               <button
                 type="submit"
                 style={styles.button}
+                disabled={isSubmitting}
               >
                 CREATE RESTAURANT ACCOUNT
               </button>
@@ -717,8 +889,7 @@ export default function AdminRestaurants() {
             </h2>
 
             <p style={styles.sectionIntro}>
-              {restaurants.length}{" "}
-              restaurant
+              {restaurants.length} restaurant
               {restaurants.length === 1 ? "" : "s"}{" "}
               registered.
             </p>
@@ -731,13 +902,36 @@ export default function AdminRestaurants() {
           ) : (
             <div style={styles.restaurantList}>
               {restaurants.map((restaurant) => {
-                const primaryUser =
-                  restaurant.users?.[0];
+                const primaryUser = restaurant.users?.[0];
 
                 const canEdit = Boolean(primaryUser);
 
                 const isEditing =
                   editingRestaurantId === restaurant.id;
+
+                const showPayouts =
+                  expandedPayoutRestaurantId ===
+                  restaurant.id;
+
+                const payouts = restaurant.payouts || [];
+
+                const unpaidPayouts = payouts.filter(
+                  (payout) =>
+                    payout.status !== "paid" &&
+                    payout.status !== "completed",
+                );
+
+                const paidPayouts = payouts.filter(
+                  (payout) =>
+                    payout.status === "paid" ||
+                    payout.status === "completed",
+                );
+
+                const unpaidAmount = unpaidPayouts.reduce(
+                  (total, payout) =>
+                    total + Number(payout.restaurantEarnings),
+                  0,
+                );
 
                 return (
                   <div
@@ -780,7 +974,6 @@ export default function AdminRestaurants() {
                         <span style={styles.detailLabel}>
                           Email
                         </span>
-
                         <span>
                           {primaryUser?.email || "No email"}
                         </span>
@@ -790,7 +983,6 @@ export default function AdminRestaurants() {
                         <span style={styles.detailLabel}>
                           Account
                         </span>
-
                         <span>
                           {primaryUser?.activated
                             ? "Activated"
@@ -802,7 +994,6 @@ export default function AdminRestaurants() {
                         <span style={styles.detailLabel}>
                           Orders
                         </span>
-
                         <span>
                           {restaurant._count.orderDecisions}
                         </span>
@@ -812,7 +1003,6 @@ export default function AdminRestaurants() {
                         <span style={styles.detailLabel}>
                           Accepting orders
                         </span>
-
                         <span>
                           {restaurant.acceptingOrders
                             ? "Yes"
@@ -821,7 +1011,204 @@ export default function AdminRestaurants() {
                       </div>
                     </div>
 
-                    {/* EDIT DETAILS BUTTON */}
+                    {/* PAYOUT MANAGEMENT */}
+
+                    <div style={styles.payoutSection}>
+                      <div style={styles.payoutHeadingRow}>
+                        <div>
+                          <div style={styles.payoutHeading}>
+                            Weekly Payouts
+                          </div>
+
+                          <div style={styles.payoutSubtext}>
+                            Manual bank transfer management
+                          </div>
+                        </div>
+
+                        <div style={styles.payoutOutstanding}>
+                          {money(unpaidAmount)} outstanding
+                        </div>
+                      </div>
+
+                      <div style={styles.payoutStats}>
+                        <div>
+                          <strong>{unpaidPayouts.length}</strong>
+                          <span> Awaiting payment</span>
+                        </div>
+
+                        <div>
+                          <strong>{paidPayouts.length}</strong>
+                          <span> Paid</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        style={styles.viewPayoutsButton}
+                        onClick={() =>
+                          setExpandedPayoutRestaurantId(
+                            showPayouts
+                              ? null
+                              : restaurant.id,
+                          )
+                        }
+                      >
+                        {showPayouts
+                          ? "HIDE PAYOUTS"
+                          : "VIEW PAYOUTS"}
+                      </button>
+
+                      {showPayouts && (
+                        <div style={styles.payoutList}>
+                          {payouts.length === 0 ? (
+                            <div style={styles.noPayouts}>
+                              No payout records yet.
+                              Weekly payouts will appear
+                              here once they have been
+                              created in the database.
+                            </div>
+                          ) : (
+                            payouts.map((payout) => {
+                              const isPaid =
+                                payout.status === "paid" ||
+                                payout.status === "completed";
+
+                              return (
+                                <div
+                                  key={payout.id}
+                                  style={styles.payoutItem}
+                                >
+                                  <div style={styles.payoutItemTop}>
+                                    <div>
+                                      <strong>
+                                        {formatDate(
+                                          payout.weekStart,
+                                        )}
+                                        {" – "}
+                                        {formatDate(
+                                          payout.weekEnd,
+                                        )}
+                                      </strong>
+
+                                      <div style={styles.payoutSmall}>
+                                        {payout.acceptedOrderCount}{" "}
+                                        accepted orders
+                                      </div>
+                                    </div>
+
+                                    <span
+                                      style={
+                                        isPaid
+                                          ? styles.paidBadge
+                                          : styles.expectedBadge
+                                      }
+                                    >
+                                      {isPaid
+                                        ? "PAID"
+                                        : "AWAITING PAYMENT"}
+                                    </span>
+                                  </div>
+
+                                  <div style={styles.payoutBreakdown}>
+                                    <div>
+                                      <span>Food sales</span>
+                                      <strong>
+                                        {money(payout.foodSales)}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>Delivery income</span>
+                                      <strong>
+                                        {money(
+                                          payout.deliveryIncome,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>Commission</span>
+                                      <strong>
+                                        {money(
+                                          payout.commission,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div style={styles.payoutTotalRow}>
+                                      <span>Restaurant receives</span>
+                                      <strong>
+                                        {money(
+                                          payout.restaurantEarnings,
+                                        )}
+                                      </strong>
+                                    </div>
+                                  </div>
+
+                                  {isPaid ? (
+                                    <div style={styles.paidConfirmation}>
+                                      ✓ Paid on{" "}
+                                      {formatDate(
+                                        payout.payoutDate,
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div style={styles.expectedDate}>
+                                        Expected payout:{" "}
+                                        <strong>
+                                          {formatDate(
+                                            payout.payoutDate,
+                                          )}
+                                        </strong>
+                                      </div>
+
+                                      <Form
+                                        method="post"
+                                        onSubmit={(event) => {
+                                          const confirmed =
+                                            window.confirm(
+                                              `Have you already transferred ${money(
+                                                payout.restaurantEarnings,
+                                              )} to ${restaurant.name}?\n\nOnly click OK after the bank transfer has been completed.`,
+                                            );
+
+                                          if (!confirmed) {
+                                            event.preventDefault();
+                                          }
+                                        }}
+                                      >
+                                        <input
+                                          type="hidden"
+                                          name="intent"
+                                          value="mark-payout-paid"
+                                        />
+
+                                        <input
+                                          type="hidden"
+                                          name="payoutId"
+                                          value={payout.id}
+                                        />
+
+                                        <button
+                                          type="submit"
+                                          style={styles.markPaidButton}
+                                          disabled={isSubmitting}
+                                        >
+                                          ✓ MARK AS PAID
+                                        </button>
+                                      </Form>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* EDIT DETAILS */}
 
                     {canEdit && (
                       <div style={styles.editAction}>
@@ -842,8 +1229,6 @@ export default function AdminRestaurants() {
                         </button>
                       </div>
                     )}
-
-                    {/* EDIT RESTAURANT FORM */}
 
                     {canEdit && isEditing && (
                       <div style={styles.editPanel}>
@@ -921,6 +1306,7 @@ export default function AdminRestaurants() {
                           <button
                             type="submit"
                             style={styles.saveButton}
+                            disabled={isSubmitting}
                           >
                             SAVE RESTAURANT DETAILS
                           </button>
@@ -961,6 +1347,7 @@ export default function AdminRestaurants() {
 
                         <button
                           type="submit"
+                          disabled={isSubmitting}
                           style={
                             restaurant.active
                               ? styles.deactivateButton
@@ -981,10 +1368,10 @@ export default function AdminRestaurants() {
         </section>
 
         <div style={styles.security}>
-          🔒 Deactivating a restaurant does not
-          delete its previous orders or payout
-          history. The restaurant can be
-          reactivated later.
+          🔒 Mark a payout as paid only after
+          completing the bank transfer.
+          Deactivating a restaurant does not
+          delete its previous orders or payout history.
         </div>
       </div>
     </main>
@@ -992,7 +1379,7 @@ export default function AdminRestaurants() {
 }
 
 // ======================================================
-// BLACK / YELLOW / WHITE STYLING
+// STYLES
 // ======================================================
 
 const styles = {
@@ -1006,7 +1393,7 @@ const styles = {
 
   container: {
     width: "100%",
-    maxWidth: 760,
+    maxWidth: 900,
     margin: "30px auto",
   },
 
@@ -1047,7 +1434,6 @@ const styles = {
     fontSize: 34,
     margin: "0 0 8px",
     fontWeight: 900,
-    color: BLACK,
   },
 
   intro: {
@@ -1055,11 +1441,39 @@ const styles = {
     margin: 0,
   },
 
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
+    marginBottom: 24,
+  },
+
+  summaryCard: {
+    background: WHITE,
+    border: "1px solid #DDDDDD",
+    borderTop: `5px solid ${YELLOW}`,
+    borderRadius: 12,
+    padding: 20,
+  },
+
+  summaryLabel: {
+    color: GREY,
+    fontSize: 12,
+    fontWeight: 900,
+    marginBottom: 10,
+  },
+
+  summaryValue: {
+    fontSize: 27,
+    fontWeight: 900,
+    overflowWrap: "anywhere",
+  },
+
   sectionTitle: {
     fontSize: 22,
     margin: "0 0 8px",
     fontWeight: 900,
-    color: BLACK,
   },
 
   sectionIntro: {
@@ -1088,7 +1502,6 @@ const styles = {
     display: "block",
     fontWeight: 800,
     marginBottom: 7,
-    color: BLACK,
   },
 
   input: {
@@ -1107,7 +1520,7 @@ const styles = {
     width: "100%",
     background: YELLOW,
     color: BLACK,
-    border: "2px solid " + BLACK,
+    border: `2px solid ${BLACK}`,
     borderRadius: 9,
     padding: 16,
     fontSize: 16,
@@ -1122,7 +1535,7 @@ const styles = {
   restaurantHeader: {
     marginBottom: 14,
     paddingBottom: 12,
-    borderBottom: "4px solid " + YELLOW,
+    borderBottom: `4px solid ${YELLOW}`,
   },
 
   restaurantList: {
@@ -1135,7 +1548,7 @@ const styles = {
     border: "1px solid #E0E0E0",
     borderRadius: 14,
     padding: 20,
-    borderLeft: "5px solid " + YELLOW,
+    borderLeft: `5px solid ${YELLOW}`,
   },
 
   restaurantCardInactive: {
@@ -1155,7 +1568,6 @@ const styles = {
     fontSize: 19,
     fontWeight: 900,
     marginBottom: 5,
-    color: BLACK,
   },
 
   restaurantId: {
@@ -1167,7 +1579,7 @@ const styles = {
   activeBadge: {
     background: YELLOW,
     color: BLACK,
-    border: "1px solid " + BLACK,
+    border: `1px solid ${BLACK}`,
     borderRadius: 999,
     padding: "6px 10px",
     fontSize: 11,
@@ -1203,119 +1615,159 @@ const styles = {
     marginBottom: 4,
   },
 
-  actions: {
-    borderTop: "1px solid #EEEEEE",
-    marginTop: 20,
-    paddingTop: 18,
+  payoutSection: {
+    marginTop: 22,
+    background: "#FAFAFA",
+    border: "1px solid #DDDDDD",
+    borderRadius: 12,
+    padding: 18,
   },
 
-  deactivateButton: {
+  payoutHeadingRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+
+  payoutHeading: {
+    fontSize: 18,
+    fontWeight: 900,
+  },
+
+  payoutSubtext: {
+    fontSize: 12,
+    color: GREY,
+    marginTop: 4,
+  },
+
+  payoutOutstanding: {
+    background: "#FFF4C2",
+    border: `1px solid ${YELLOW}`,
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontWeight: 900,
+    fontSize: 13,
+  },
+
+  payoutStats: {
+    display: "flex",
+    gap: 24,
+    flexWrap: "wrap",
+    margin: "16px 0",
+    fontSize: 13,
+  },
+
+  viewPayoutsButton: {
     width: "100%",
-    background: WHITE,
-    color: BLACK,
-    border: "2px solid " + BLACK,
+    background: BLACK,
+    color: YELLOW,
+    border: 0,
     borderRadius: 9,
     padding: 13,
-    fontSize: 14,
     fontWeight: 900,
     cursor: "pointer",
   },
 
-  reactivateButton: {
+  payoutList: {
+    marginTop: 15,
+    display: "grid",
+    gap: 12,
+  },
+
+  noPayouts: {
+    padding: 18,
+    background: WHITE,
+    border: "1px solid #DDDDDD",
+    borderRadius: 10,
+    fontSize: 14,
+    color: GREY,
+    lineHeight: 1.6,
+  },
+
+  payoutItem: {
+    background: WHITE,
+    border: "1px solid #DDDDDD",
+    borderRadius: 12,
+    padding: 18,
+  },
+
+  payoutItemTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 14,
+  },
+
+  payoutSmall: {
+    color: GREY,
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  paidBadge: {
+    background: "#E8F5E9",
+    color: "#137333",
+    borderRadius: 30,
+    padding: "7px 10px",
+    fontSize: 11,
+    fontWeight: 900,
+  },
+
+  expectedBadge: {
+    background: "#FFF4C2",
+    color: BLACK,
+    borderRadius: 30,
+    padding: "7px 10px",
+    fontSize: 11,
+    fontWeight: 900,
+  },
+
+  payoutBreakdown: {
+    display: "grid",
+    gap: 9,
+    fontSize: 14,
+  },
+
+  payoutTotalRow: {
+    borderTop: "2px solid #EEEEEE",
+    paddingTop: 12,
+    marginTop: 5,
+    fontSize: 17,
+    fontWeight: 900,
+  },
+
+  expectedDate: {
+    marginTop: 15,
+    marginBottom: 12,
+    fontSize: 13,
+    color: GREY,
+  },
+
+  markPaidButton: {
     width: "100%",
     background: YELLOW,
     color: BLACK,
-    border: "2px solid " + BLACK,
+    border: `2px solid ${BLACK}`,
     borderRadius: 9,
-    padding: 13,
-    fontSize: 14,
+    padding: 14,
+    fontSize: 15,
     fontWeight: 900,
     cursor: "pointer",
   },
 
-  empty: {
-    background: WHITE,
-    border: "1px solid #DDDDDD",
-    borderRadius: 14,
-    padding: 24,
-    color: GREY,
-    textAlign: "center",
-  },
-
-  error: {
-    background: "#FFF0F0",
-    border: "1px solid #D72C0D",
-    color: "#8E1F0B",
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-
-  success: {
-    background: WHITE,
-    border: "2px solid " + YELLOW,
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 20,
-  },
-
-  managementSuccess: {
-    background: "#FFF9CC",
-    border: "1px solid " + YELLOW,
-    color: BLACK,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 20,
-    fontWeight: 700,
-  },
-
-  successTitle: {
-    color: BLACK,
-    fontSize: 19,
-    fontWeight: 900,
-    marginBottom: 15,
-  },
-
-  details: {
-    lineHeight: 1.7,
-    marginBottom: 20,
-  },
-
-  linkLabel: {
-    fontSize: 12,
-    fontWeight: 900,
-    color: BLACK,
-    marginBottom: 6,
-  },
-
-  activationLink: {
-    background: "#FFF9CC",
-    border: "1px solid " + YELLOW,
+  paidConfirmation: {
+    marginTop: 15,
     padding: 12,
-    borderRadius: 8,
-    overflowWrap: "anywhere",
-    fontSize: 14,
-  },
-
-  note: {
-    color: GREY,
+    background: "#E8F5E9",
+    color: "#137333",
+    borderRadius: 9,
+    fontWeight: 900,
     fontSize: 13,
-    marginBottom: 0,
   },
-
-  security: {
-    background: "#FFF9CC",
-    border: "1px solid " + YELLOW,
-    borderRadius: 10,
-    padding: 16,
-    marginTop: 18,
-    fontSize: 14,
-    lineHeight: 1.5,
-  },
-
-  // ====================================================
-  // EDIT DETAILS STYLING
-  // ====================================================
 
   editAction: {
     marginTop: 18,
@@ -1325,7 +1777,7 @@ const styles = {
     width: "100%",
     background: BLACK,
     color: YELLOW,
-    border: "2px solid " + BLACK,
+    border: `2px solid ${BLACK}`,
     borderRadius: 9,
     padding: 13,
     fontSize: 14,
@@ -1335,7 +1787,7 @@ const styles = {
 
   editPanel: {
     background: "#FAFAFA",
-    border: "2px solid " + YELLOW,
+    border: `2px solid ${YELLOW}`,
     borderRadius: 12,
     padding: 20,
     marginTop: 15,
@@ -1344,7 +1796,6 @@ const styles = {
   editHeading: {
     fontSize: 20,
     margin: "0 0 8px",
-    color: BLACK,
     fontWeight: 900,
   },
 
@@ -1377,11 +1828,119 @@ const styles = {
     width: "100%",
     background: YELLOW,
     color: BLACK,
-    border: "2px solid " + BLACK,
+    border: `2px solid ${BLACK}`,
     borderRadius: 9,
     padding: 15,
     fontSize: 15,
     fontWeight: 900,
     cursor: "pointer",
+  },
+
+  actions: {
+    borderTop: "1px solid #EEEEEE",
+    marginTop: 20,
+    paddingTop: 18,
+  },
+
+  deactivateButton: {
+    width: "100%",
+    background: WHITE,
+    color: BLACK,
+    border: `2px solid ${BLACK}`,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  reactivateButton: {
+    width: "100%",
+    background: YELLOW,
+    color: BLACK,
+    border: `2px solid ${BLACK}`,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  empty: {
+    background: WHITE,
+    border: "1px solid #DDDDDD",
+    borderRadius: 14,
+    padding: 24,
+    color: GREY,
+    textAlign: "center",
+  },
+
+  error: {
+    background: "#FFF0F0",
+    border: "1px solid #D72C0D",
+    color: "#8E1F0B",
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+
+  success: {
+    background: WHITE,
+    border: `2px solid ${YELLOW}`,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+  },
+
+  managementSuccess: {
+    background: "#FFF9CC",
+    border: `1px solid ${YELLOW}`,
+    color: BLACK,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 20,
+    fontWeight: 700,
+  },
+
+  successTitle: {
+    fontSize: 19,
+    fontWeight: 900,
+    marginBottom: 15,
+  },
+
+  details: {
+    lineHeight: 1.7,
+    marginBottom: 20,
+  },
+
+  linkLabel: {
+    fontSize: 12,
+    fontWeight: 900,
+    marginBottom: 6,
+  },
+
+  activationLink: {
+    background: "#FFF9CC",
+    border: `1px solid ${YELLOW}`,
+    padding: 12,
+    borderRadius: 8,
+    overflowWrap: "anywhere",
+    fontSize: 14,
+  },
+
+  note: {
+    color: GREY,
+    fontSize: 13,
+    marginBottom: 0,
+  },
+
+  security: {
+    background: "#FFF9CC",
+    border: `1px solid ${YELLOW}`,
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 18,
+    fontSize: 14,
+    lineHeight: 1.5,
   },
 };
