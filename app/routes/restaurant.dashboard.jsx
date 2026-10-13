@@ -1141,6 +1141,51 @@ async function getShopifyOrders(
     ),
   );
 
+    /*
+  =========================================================
+  PAID THIS MONTH — COMPLETED PAYOUTS ONLY
+  =========================================================
+  */
+
+  const londonNow = londonDateParts();
+
+  const monthStart = new Date(
+    Date.UTC(
+      londonNow.year,
+      londonNow.month - 1,
+      1,
+    ),
+  );
+
+  const nextMonthStart = new Date(
+    Date.UTC(
+      londonNow.year,
+      londonNow.month,
+      1,
+    ),
+  );
+
+  const completedPayouts = await db.restaurantPayout.findMany({
+    where: {
+      restaurantId: user.restaurant.id,
+      status: {
+        in: ["paid", "completed"],
+      },
+      payoutDate: {
+        gte: monthStart,
+        lt: nextMonthStart,
+      },
+    },
+    select: {
+      restaurantEarnings: true,
+    },
+  });
+
+  const paidThisMonth = completedPayouts.reduce(
+    (total, payout) =>
+      total + Number(payout.restaurantEarnings),
+    0,
+  );
   return {
     user: {
       email:
@@ -1169,6 +1214,8 @@ async function getShopifyOrders(
 
     orders:
       ordersWithDecisions,
+
+    paidThisMonth,
   };
 }
   
@@ -1416,7 +1463,7 @@ export async function action({
                 shopifyOrder.name,
 
               shopifyOrderId,
-            },$
+            },
           );
 
           return {
@@ -2593,6 +2640,7 @@ export default function RestaurantDashboard() {
     restaurant,
     user,
     orders: shopifyOrders,
+    paidThisMonth = 0,
   } = useLoaderData();
 
   const navigation =
@@ -3228,6 +3276,7 @@ export default function RestaurantDashboard() {
     acceptedFoodSales * 0.9 +
     deliveryIncome;
 
+  
   const serviceFees =
     weeklyAcceptedOrders.reduce(
       (total, order) =>
@@ -3663,6 +3712,10 @@ export default function RestaurantDashboard() {
                   restaurantEarnings,
                 )}
               />
+              <PaymentCard
+  title="PAID THIS MONTH"
+  value={money(paidThisMonth)}
+/>
             </div>
 
             <section
