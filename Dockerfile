@@ -1,4 +1,5 @@
 FROM node:20-alpine
+
 RUN apk add --no-cache openssl
 
 EXPOSE 3000
@@ -13,6 +14,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY . .
 
+# Generate Prisma Client using the current database schema
+RUN npx prisma generate
+
+# Build Meal Deal Hub
 RUN npm run build
 
 CMD ["npm", "run", "docker-start"]
