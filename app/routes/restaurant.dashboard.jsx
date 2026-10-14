@@ -102,15 +102,15 @@ async function getAuthenticatedUser(request) {
     where: {
       id: userId,
     },
-    include: {
-      restaurant: true,
-    },
+   include: {
+  Restaurant: true,
+}
   });
 
   if (
     !user ||
     !user.active ||
-    !user.restaurant ||
+    !user.Restaurant ||
     !user.restaurant.active
   ) {
     return null;
