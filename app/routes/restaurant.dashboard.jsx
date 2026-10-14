@@ -14,16 +14,13 @@ import {
 } from "react";
 
 import crypto from "node:crypto";
+
 import db from "../db.server";
 import shopify from "../shopify.server";
 
 const COOKIE_NAME = "mdh_restaurant_session";
-
-const SHOP_DOMAIN =
-  "bite-pfyaja4s.myshopify.com";
-
-const SERVICE_FEE_PREFIX =
-  "Meal Deal Hub Service Fee";
+const SHOP_DOMAIN = "bite-pfyaja4s.myshopify.com";
+const SERVICE_FEE_PREFIX = "Meal Deal Hub Service Fee";
 
 /*
 =========================================================
@@ -46,8 +43,7 @@ function sign(value) {
 }
 
 function readCookie(request) {
-  const cookieHeader =
-    request.headers.get("Cookie") || "";
+  const cookieHeader = request.headers.get("Cookie") || "";
 
   const cookies = Object.fromEntries(
     cookieHeader
@@ -76,8 +72,7 @@ function verifySession(sessionValue) {
     return null;
   }
 
-  const [userId, signature] =
-    sessionValue.split(".");
+  const [userId, signature] = sessionValue.split(".");
 
   if (!userId || !signature) {
     return null;
@@ -85,25 +80,14 @@ function verifySession(sessionValue) {
 
   const expectedSignature = sign(userId);
 
-  const signatureBuffer =
-    Buffer.from(signature);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
 
-  const expectedBuffer =
-    Buffer.from(expectedSignature);
-
-  if (
-    signatureBuffer.length !==
-    expectedBuffer.length
-  ) {
+  if (signatureBuffer.length !== expectedBuffer.length) {
     return null;
   }
 
-  if (
-    !crypto.timingSafeEqual(
-      signatureBuffer,
-      expectedBuffer,
-    )
-  ) {
+  if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
     return null;
   }
 
@@ -115,23 +99,20 @@ function verifySession(sessionValue) {
 }
 
 async function getAuthenticatedUser(request) {
-  const userId = verifySession(
-    readCookie(request),
-  );
+  const userId = verifySession(readCookie(request));
 
   if (!userId) {
     return null;
   }
 
-  const user =
-    await db.restaurantUser.findUnique({
-      where: {
-        id: userId,
-      },
-      include: {
-        Restaurant: true,
-      },
-    });
+  const user = await db.restaurantUser.findUnique({
+    where: {
+      id: userId,
+    },
+    include: {
+      Restaurant: true,
+    },
+  });
 
   if (
     !user ||
@@ -154,8 +135,7 @@ HELPERS
 function getAttribute(attributes, key) {
   return (
     attributes?.find(
-      (attribute) =>
-        attribute.key === key,
+      (attribute) => attribute.key === key,
     )?.value || ""
   );
 }
@@ -177,11 +157,7 @@ function textMatches(first, second) {
     return false;
   }
 
-  return (
-    a === b ||
-    a.includes(b) ||
-    b.includes(a)
-  );
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 function isServiceFeeItem(item) {
@@ -226,24 +202,17 @@ function londonDateTime(dateString) {
   }).format(new Date(dateString));
 }
 
-function londonDateParts(
-  date = new Date(),
-) {
-  const parts = new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      timeZone: "Europe/London",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      weekday: "short",
-    },
-  ).formatToParts(date);
+function londonDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
 
   const get = (type) =>
-    parts.find(
-      (part) => part.type === type,
-    )?.value || "";
+    parts.find((part) => part.type === type)?.value || "";
 
   return {
     year: Number(get("year")),
@@ -253,11 +222,7 @@ function londonDateParts(
   };
 }
 
-function dateKeyFromParts(
-  year,
-  month,
-  day,
-) {
+function dateKeyFromParts(year, month, day) {
   return [
     String(year).padStart(4, "0"),
     String(month).padStart(2, "0"),
@@ -270,9 +235,7 @@ function londonDateKey(dateString) {
     return "";
   }
 
-  const parts = londonDateParts(
-    new Date(dateString),
-  );
+  const parts = londonDateParts(new Date(dateString));
 
   return dateKeyFromParts(
     parts.year,
@@ -282,8 +245,7 @@ function londonDateKey(dateString) {
 }
 
 function getCurrentPaymentWeek() {
-  const londonNow =
-    londonDateParts();
+  const londonNow = londonDateParts();
 
   const weekdayNumbers = {
     Mon: 0,
@@ -296,9 +258,7 @@ function getCurrentPaymentWeek() {
   };
 
   const daysSinceMonday =
-    weekdayNumbers[
-      londonNow.weekday
-    ] ?? 0;
+    weekdayNumbers[londonNow.weekday] ?? 0;
 
   const todayCalendar = new Date(
     Date.UTC(
@@ -308,23 +268,19 @@ function getCurrentPaymentWeek() {
     ),
   );
 
-  const mondayCalendar =
-    new Date(todayCalendar);
+  const mondayCalendar = new Date(todayCalendar);
 
   mondayCalendar.setUTCDate(
-    todayCalendar.getUTCDate() -
-      daysSinceMonday,
+    todayCalendar.getUTCDate() - daysSinceMonday,
   );
 
-  const sundayCalendar =
-    new Date(mondayCalendar);
+  const sundayCalendar = new Date(mondayCalendar);
 
   sundayCalendar.setUTCDate(
     mondayCalendar.getUTCDate() + 6,
   );
 
-  const payoutCalendar =
-    new Date(mondayCalendar);
+  const payoutCalendar = new Date(mondayCalendar);
 
   payoutCalendar.setUTCDate(
     mondayCalendar.getUTCDate() + 9,
@@ -339,48 +295,33 @@ function getCurrentPaymentWeek() {
   }
 
   function displayDate(date) {
-    return new Intl.DateTimeFormat(
-      "en-GB",
-      {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-      },
-    ).format(date);
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
   }
 
   return {
-    startKey:
-      calendarKey(mondayCalendar),
-
-    endKey:
-      calendarKey(sundayCalendar),
-
-    startLabel:
-      displayDate(mondayCalendar),
-
-    endLabel:
-      displayDate(sundayCalendar),
-
-    payoutLabel:
-      displayDate(payoutCalendar),
+    startKey: calendarKey(mondayCalendar),
+    endKey: calendarKey(sundayCalendar),
+    startLabel: displayDate(mondayCalendar),
+    endLabel: displayDate(sundayCalendar),
+    payoutLabel: displayDate(payoutCalendar),
   };
 }
 
 function getOrderType(order) {
-  const shippingTitle =
-    normaliseText(
-      order.shippingLine?.title,
-    );
+  const shippingTitle = normaliseText(
+    order.shippingLine?.title,
+  );
 
-  const shippingCode =
-    normaliseText(
-      order.shippingLine?.code,
-    );
+  const shippingCode = normaliseText(
+    order.shippingLine?.code,
+  );
 
-  const combined =
-    `${shippingTitle} ${shippingCode}`;
+  const combined = `${shippingTitle} ${shippingCode}`;
 
   if (
     combined.includes("pickup") ||
@@ -407,9 +348,7 @@ function getShippingLocation(order) {
 }
 
 function toPence(value) {
-  return Math.round(
-    Number(value || 0) * 100,
-  );
+  return Math.round(Number(value || 0) * 100);
 }
 
 function formatPayoutDate(date) {
@@ -417,15 +356,12 @@ function formatPayoutDate(date) {
     return "";
   }
 
-  return new Intl.DateTimeFormat(
-    "en-GB",
-    {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    },
-  ).format(new Date(date));
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date));
 }
 
 /*
@@ -434,10 +370,7 @@ SHOPIFY ORDER QUERY
 =========================================================
 */
 
-async function fetchShopifyOrderPage(
-  admin,
-  cursor = null,
-) {
+async function fetchShopifyOrderPage(admin, cursor = null) {
   const response = await admin.graphql(
     `
       query RestaurantOrders($cursor: String) {
@@ -530,8 +463,7 @@ async function fetchShopifyOrderPage(
     },
   );
 
-  const result =
-    await response.json();
+  const result = await response.json();
 
   if (result.errors?.length) {
     console.error(
@@ -539,26 +471,21 @@ async function fetchShopifyOrderPage(
       JSON.stringify(result.errors),
     );
 
-    throw new Error(
-      "Shopify order query failed.",
-    );
+    throw new Error("Shopify order query failed.");
   }
 
   return {
-    nodes:
-      result.data?.orders?.nodes || [],
-
-    pageInfo:
-      result.data?.orders?.pageInfo || {
-        hasNextPage: false,
-        endCursor: null,
-      },
+    nodes: result.data?.orders?.nodes || [],
+    pageInfo: result.data?.orders?.pageInfo || {
+      hasNextPage: false,
+      endCursor: null,
+    },
   };
 }
 
 /*
 =========================================================
-ASSIGNED LOCATION LOOKUP
+SAFE ASSIGNED LOCATION LOOKUP
 =========================================================
 */
 
@@ -568,32 +495,28 @@ async function getAssignedLocations(
   orderName = "",
 ) {
   try {
-    const response =
-      await admin.graphql(
-        `
-          query RestaurantOrderAssignedLocation(
-            $id: ID!
-          ) {
-            order(id: $id) {
-              fulfillmentOrders(first: 20) {
-                nodes {
-                  assignedLocation {
-                    name
-                  }
+    const response = await admin.graphql(
+      `
+        query RestaurantOrderAssignedLocation($id: ID!) {
+          order(id: $id) {
+            fulfillmentOrders(first: 20) {
+              nodes {
+                assignedLocation {
+                  name
                 }
               }
             }
           }
-        `,
-        {
-          variables: {
-            id: orderId,
-          },
+        }
+      `,
+      {
+        variables: {
+          id: orderId,
         },
-      );
+      },
+    );
 
-    const result =
-      await response.json();
+    const result = await response.json();
 
     if (result.errors?.length) {
       console.error(
@@ -609,13 +532,11 @@ async function getAssignedLocations(
     }
 
     return (
-      result.data?.order
-        ?.fulfillmentOrders?.nodes || []
+      result.data?.order?.fulfillmentOrders?.nodes || []
     )
       .map(
         (fulfillmentOrder) =>
-          fulfillmentOrder
-            ?.assignedLocation?.name || "",
+          fulfillmentOrder?.assignedLocation?.name || "",
       )
       .filter(Boolean);
   } catch (error) {
@@ -641,33 +562,20 @@ async function getRawShopifyOrders(admin) {
   let hasNextPage = true;
   let pageNumber = 0;
 
-  /*
-  Keep the existing five-page limit so older
-  orders do not unexpectedly disappear.
-  */
-
   const MAX_PAGES = 5;
 
-  while (
-    hasNextPage &&
-    pageNumber < MAX_PAGES
-  ) {
+  while (hasNextPage && pageNumber < MAX_PAGES) {
     pageNumber += 1;
 
-    const page =
-      await fetchShopifyOrderPage(
-        admin,
-        cursor,
-      );
+    const page = await fetchShopifyOrderPage(
+      admin,
+      cursor,
+    );
 
     allOrders.push(...page.nodes);
 
-    hasNextPage = Boolean(
-      page.pageInfo.hasNextPage,
-    );
-
-    cursor =
-      page.pageInfo.endCursor || null;
+    hasNextPage = Boolean(page.pageInfo.hasNextPage);
+    cursor = page.pageInfo.endCursor || null;
 
     if (!cursor) {
       hasNextPage = false;
@@ -681,16 +589,11 @@ async function getShopifyOrders(
   restaurantId,
   restaurantName,
 ) {
-  const startedAt = Date.now();
+  const { admin } = await shopify.unauthenticated.admin(
+    SHOP_DOMAIN,
+  );
 
-  const { admin } =
-    await shopify.unauthenticated.admin(
-      SHOP_DOMAIN,
-    );
-
-  const nodes =
-    await getRawShopifyOrders(admin);
-
+  const nodes = await getRawShopifyOrders(admin);
   const results = [];
 
   const ASSIGNED_LOCATION_LOOKUP_AGE_MS =
@@ -701,35 +604,31 @@ async function getShopifyOrders(
   for (const order of nodes) {
     const foodItems =
       order.lineItems?.nodes?.filter(
-        (item) =>
-          !isServiceFeeItem(item),
+        (item) => !isServiceFeeItem(item),
       ) || [];
 
     if (foodItems.length === 0) {
       continue;
     }
 
-    const foodRestaurantIds =
-      foodItems
-        .map((item) =>
+    const foodRestaurantIds = foodItems
+      .map((item) =>
+        getAttribute(
+          item.customAttributes,
+          "_Restaurant ID",
+        ),
+      )
+      .filter(Boolean);
+
+    const matchingItems = foodItems.filter(
+      (item) =>
+        normaliseText(
           getAttribute(
             item.customAttributes,
             "_Restaurant ID",
           ),
-        )
-        .filter(Boolean);
-
-    const matchingItems =
-      foodItems.filter(
-        (item) =>
-          normaliseText(
-            getAttribute(
-              item.customAttributes,
-              "_Restaurant ID",
-            ),
-          ) ===
-          normaliseText(restaurantId),
-      );
+        ) === normaliseText(restaurantId),
+    );
 
     const noFoodRestaurantId =
       foodRestaurantIds.length === 0;
@@ -737,11 +636,10 @@ async function getShopifyOrders(
     const hasExplicitFoodRestaurant =
       foodRestaurantIds.length > 0;
 
-    const orderRestaurantId =
-      getAttribute(
-        order.customAttributes,
-        "_Restaurant ID",
-      );
+    const orderRestaurantId = getAttribute(
+      order.customAttributes,
+      "_Restaurant ID",
+    );
 
     const orderRestaurantMatches =
       Boolean(orderRestaurantId) &&
@@ -752,11 +650,8 @@ async function getShopifyOrders(
       Boolean(orderRestaurantId) &&
       !orderRestaurantMatches;
 
-    const orderType =
-      getOrderType(order);
-
-    const shippingLocation =
-      getShippingLocation(order);
+    const orderType = getOrderType(order);
+    const shippingLocation = getShippingLocation(order);
 
     let belongsToRestaurant =
       matchingItems.length > 0;
@@ -770,24 +665,17 @@ async function getShopifyOrders(
 
     let assignedLocations = [];
 
-    const orderCreatedTime =
-      order.createdAt
-        ? new Date(
-            order.createdAt,
-          ).getTime()
-        : 0;
+    const orderCreatedTime = order.createdAt
+      ? new Date(order.createdAt).getTime()
+      : 0;
 
-    const orderAge =
-      now - orderCreatedTime;
+    const orderAge = now - orderCreatedTime;
 
     const orderIsRecent =
-      Number.isFinite(
-        orderCreatedTime,
-      ) &&
+      Number.isFinite(orderCreatedTime) &&
       orderCreatedTime > 0 &&
       orderAge >= 0 &&
-      orderAge <=
-        ASSIGNED_LOCATION_LOOKUP_AGE_MS;
+      orderAge <= ASSIGNED_LOCATION_LOOKUP_AGE_MS;
 
     const shouldCheckAssignedLocation =
       !belongsToRestaurant &&
@@ -797,20 +685,15 @@ async function getShopifyOrders(
       orderIsRecent;
 
     if (shouldCheckAssignedLocation) {
-      assignedLocations =
-        await getAssignedLocations(
-          admin,
-          order.id,
-          order.name,
-        );
+      assignedLocations = await getAssignedLocations(
+        admin,
+        order.id,
+        order.name,
+      );
 
       if (
-        assignedLocations.some(
-          (locationName) =>
-            textMatches(
-              locationName,
-              restaurantName,
-            ),
+        assignedLocations.some((locationName) =>
+          textMatches(locationName, restaurantName),
         )
       ) {
         belongsToRestaurant = true;
@@ -824,10 +707,7 @@ async function getShopifyOrders(
 
     if (
       canUseFallback &&
-      textMatches(
-        shippingLocation,
-        restaurantName,
-      )
+      textMatches(shippingLocation, restaurantName)
     ) {
       belongsToRestaurant = true;
     }
@@ -835,10 +715,7 @@ async function getShopifyOrders(
     if (
       canUseFallback &&
       foodItems.some((item) =>
-        textMatches(
-          item.name,
-          restaurantName,
-        ),
+        textMatches(item.name, restaurantName),
       )
     ) {
       belongsToRestaurant = true;
@@ -853,57 +730,42 @@ async function getShopifyOrders(
         ? matchingItems
         : foodItems;
 
-    const foodTotal =
-      restaurantFoodItems.reduce(
+    const foodTotal = restaurantFoodItems.reduce(
+      (total, item) =>
+        total +
+        Number(
+          item.originalTotalSet?.shopMoney?.amount || 0,
+        ),
+      0,
+    );
+
+    const serviceFee = (
+      order.lineItems?.nodes || []
+    )
+      .filter((item) => isServiceFeeItem(item))
+      .reduce(
         (total, item) =>
           total +
           Number(
-            item.originalTotalSet
-              ?.shopMoney?.amount || 0,
+            item.originalTotalSet?.shopMoney?.amount || 0,
           ),
         0,
       );
 
-    const serviceFee =
-      (
-        order.lineItems?.nodes || []
-      )
-        .filter(
-          (item) =>
-            isServiceFeeItem(item),
-        )
-        .reduce(
-          (total, item) =>
-            total +
-            Number(
-              item.originalTotalSet
-                ?.shopMoney?.amount || 0,
-            ),
-          0,
-        );
-
     results.push({
       id: order.id,
-
       orderNumber: order.name,
-
       createdAt: order.createdAt,
-
       restaurantId,
-
       orderType,
 
       pickupLocation:
         orderType === "pickup"
-          ? assignedLocations[0] ||
-            shippingLocation
+          ? assignedLocations[0] || shippingLocation
           : "",
 
-      time:
-        londonTime(order.createdAt),
-
-      dateTime:
-        londonDateTime(order.createdAt),
+      time: londonTime(order.createdAt),
+      dateTime: londonDateTime(order.createdAt),
 
       customer:
         [
@@ -920,8 +782,7 @@ async function getShopifyOrders(
           .join(" ") ||
         "Customer",
 
-      customerEmail:
-        order.customer?.email || "",
+      customerEmail: order.customer?.email || "",
 
       customerPhone:
         order.customer?.phone ||
@@ -938,50 +799,34 @@ async function getShopifyOrders(
         .filter(Boolean)
         .join(", "),
 
-      items:
-        restaurantFoodItems.map(
-          (item) => ({
-            name: item.name,
-            quantity: item.quantity,
-          }),
-        ),
+      items: restaurantFoodItems.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+      })),
 
       foodTotal,
 
       delivery: Number(
-        order.currentShippingPriceSet
-          ?.shopMoney?.amount || 0,
+        order.currentShippingPriceSet?.shopMoney
+          ?.amount || 0,
       ),
 
       serviceFee,
 
       total: Number(
-        order.currentTotalPriceSet
-          ?.shopMoney?.amount || 0,
+        order.currentTotalPriceSet?.shopMoney
+          ?.amount || 0,
       ),
 
       currencyCode:
-        order.currentTotalPriceSet
-          ?.shopMoney?.currencyCode ||
-        "",
+        order.currentTotalPriceSet?.shopMoney
+          ?.currencyCode || "",
 
-      financialStatus:
-        order.displayFinancialStatus,
+      financialStatus: order.displayFinancialStatus,
 
       status: "new",
     });
   }
-
-  console.log(
-    "RESTAURANT SHOPIFY ORDER LOAD:",
-    {
-      restaurantId,
-      scannedOrders: nodes.length,
-      matchedOrders: results.length,
-      durationMs:
-        Date.now() - startedAt,
-    },
-  );
 
   return results;
 }
@@ -992,31 +837,21 @@ LOADER
 =========================================================
 */
 
-export async function loader({
-  request,
-}) {
-  const loaderStartedAt = Date.now();
-
-  const user =
-    await getAuthenticatedUser(
-      request,
-    );
+export async function loader({ request }) {
+  const user = await getAuthenticatedUser(request);
 
   if (!user) {
-    throw redirect(
-      "/restaurant/login",
-    );
+    throw redirect("/restaurant/login");
   }
 
   let orders = [];
   let orderLoadError = "";
 
   try {
-    orders =
-      await getShopifyOrders(
-        user.Restaurant.restaurantId,
-        user.Restaurant.name,
-      );
+    orders = await getShopifyOrders(
+      user.Restaurant.restaurantId,
+      user.Restaurant.name,
+    );
   } catch (error) {
     console.error(
       "MEAL DEAL HUB SHOPIFY ORDER ERROR:",
@@ -1027,16 +862,14 @@ export async function loader({
       "Shopify orders could not be refreshed. Please try again.";
   }
 
-  const decisions =
-    await db.orderDecision.findMany({
-      where: {
-        restaurantId:
-          user.Restaurant.id,
-      },
-      orderBy: {
-        decidedAt: "desc",
-      },
-    });
+  const decisions = await db.orderDecision.findMany({
+    where: {
+      restaurantId: user.Restaurant.id,
+    },
+    orderBy: {
+      decidedAt: "desc",
+    },
+  });
 
   const decisionMap = new Map(
     decisions.map((decision) => [
@@ -1045,52 +878,39 @@ export async function loader({
     ]),
   );
 
-  const ORDER_MAX_AGE_MS =
-    24 * 60 * 60 * 1000;
-
+  const ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
 
-  const ordersWithDecisions =
-    orders
-      .filter((order) => {
-        const savedStatus =
-          decisionMap.get(order.id);
+  const ordersWithDecisions = orders
+    .filter((order) => {
+      const savedStatus = decisionMap.get(order.id);
 
-        if (savedStatus) {
-          return true;
-        }
+      if (savedStatus) {
+        return true;
+      }
 
-        if (!order.createdAt) {
-          return false;
-        }
+      if (!order.createdAt) {
+        return false;
+      }
 
-        const orderTime =
-          new Date(
-            order.createdAt,
-          ).getTime();
+      const orderTime = new Date(
+        order.createdAt,
+      ).getTime();
 
-        return (
-          Number.isFinite(orderTime) &&
-          now - orderTime <=
-            ORDER_MAX_AGE_MS
-        );
-      })
-      .map((order) => ({
-        ...order,
-
-        status:
-          decisionMap.get(order.id) ||
-          order.status,
-      }))
-      .sort(
-        (a, b) =>
-          new Date(
-            b.createdAt,
-          ).getTime() -
-          new Date(
-            a.createdAt,
-          ).getTime(),
+      return (
+        Number.isFinite(orderTime) &&
+        now - orderTime <= ORDER_MAX_AGE_MS
       );
+    })
+    .map((order) => ({
+      ...order,
+      status: decisionMap.get(order.id) || order.status,
+    }))
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime(),
+    );
 
   /*
   =========================================================
@@ -1098,93 +918,60 @@ export async function loader({
   =========================================================
   */
 
-  const paymentWeek =
-    getCurrentPaymentWeek();
+  const paymentWeek = getCurrentPaymentWeek();
 
-  const verifiedOrders =
-    decisions.filter((decision) => {
-      if (
-        decision.status !==
-          "accepted" ||
-        decision.paymentCaptured !==
-          true ||
-        !decision.capturedAt ||
-        decision.foodSales == null ||
-        decision.deliveryIncome ==
-          null ||
-        decision.serviceFee == null ||
-        decision.currencyCode !==
-          "GBP"
-      ) {
-        return false;
-      }
+  const verifiedOrders = decisions.filter((decision) => {
+    if (
+      decision.status !== "accepted" ||
+      decision.paymentCaptured !== true ||
+      !decision.capturedAt ||
+      decision.foodSales == null ||
+      decision.deliveryIncome == null ||
+      decision.serviceFee == null ||
+      decision.currencyCode !== "GBP"
+    ) {
+      return false;
+    }
 
-      const capturedDate =
-        londonDateKey(
-          decision.capturedAt,
-        );
-
-      return (
-        capturedDate >=
-          paymentWeek.startKey &&
-        capturedDate <=
-          paymentWeek.endKey
-      );
-    });
-
-  const foodPence =
-    verifiedOrders.reduce(
-      (total, order) =>
-        total +
-        toPence(order.foodSales),
-      0,
+    const capturedDate = londonDateKey(
+      decision.capturedAt,
     );
 
-  const deliveryPence =
-    verifiedOrders.reduce(
-      (total, order) =>
-        total +
-        toPence(
-          order.deliveryIncome,
-        ),
-      0,
+    return (
+      capturedDate >= paymentWeek.startKey &&
+      capturedDate <= paymentWeek.endKey
     );
+  });
 
-  const serviceFeePence =
-    verifiedOrders.reduce(
-      (total, order) =>
-        total +
-        toPence(order.serviceFee),
-      0,
-    );
+  const foodPence = verifiedOrders.reduce(
+    (total, order) => total + toPence(order.foodSales),
+    0,
+  );
 
-  const commissionPence =
-    Math.round(
-      foodPence * 0.1,
-    );
+  const deliveryPence = verifiedOrders.reduce(
+    (total, order) =>
+      total + toPence(order.deliveryIncome),
+    0,
+  );
+
+  const serviceFeePence = verifiedOrders.reduce(
+    (total, order) => total + toPence(order.serviceFee),
+    0,
+  );
+
+  const commissionPence = Math.round(foodPence * 0.1);
 
   const paymentSummary = {
-    foodSales:
-      foodPence / 100,
-
-    deliveryIncome:
-      deliveryPence / 100,
-
-    commission:
-      commissionPence / 100,
+    foodSales: foodPence / 100,
+    deliveryIncome: deliveryPence / 100,
+    commission: commissionPence / 100,
 
     restaurantEarnings:
-      (
-        foodPence -
-        commissionPence +
-        deliveryPence
-      ) / 100,
+      (foodPence - commissionPence + deliveryPence) /
+      100,
 
-    serviceFees:
-      serviceFeePence / 100,
-
-    acceptedOrderCount:
-      verifiedOrders.length,
+    serviceFees: serviceFeePence / 100,
+    acceptedOrderCount: verifiedOrders.length,
   };
 
   /*
@@ -1193,86 +980,51 @@ export async function loader({
   =========================================================
   */
 
-  const payoutHistory =
-    await db.restaurantPayout.findMany({
-      where: {
-        restaurantId:
-          user.Restaurant.id,
-      },
-
-      orderBy: {
-        weekStart: "desc",
-      },
-
-      take: 52,
-
-      select: {
-        id: true,
-        weekStart: true,
-        weekEnd: true,
-        payoutDate: true,
-        restaurantEarnings: true,
-        acceptedOrderCount: true,
-        status: true,
-      },
-    });
-
-  /*
-  =========================================================
-  PAID THIS MONTH
-  =========================================================
-  */
-
-  const londonNow =
-    londonDateParts();
-
-  const currentMonthKey =
-    dateKeyFromParts(
-      londonNow.year,
-      londonNow.month,
-      1,
-    ).slice(0, 7);
-
-  const paidThisMonthPence =
-    payoutHistory
-      .filter((payout) => {
-        const status =
-          String(
-            payout.status || "",
-          ).toLowerCase();
-
-        return (
-          (
-            status === "paid" ||
-            status === "completed"
-          ) &&
-          londonDateKey(
-            payout.payoutDate,
-          ).startsWith(
-            currentMonthKey,
-          )
-        );
-      })
-      .reduce(
-        (total, payout) =>
-          total +
-          toPence(
-            payout.restaurantEarnings,
-          ),
-        0,
-      );
-
-  console.log(
-    "RESTAURANT DASHBOARD LOADER:",
-    {
-      restaurantId:
-        user.Restaurant.restaurantId,
-
-      durationMs:
-        Date.now() -
-        loaderStartedAt,
+  const payoutHistory = await db.restaurantPayout.findMany({
+    where: {
+      restaurantId: user.Restaurant.id,
     },
-  );
+    orderBy: {
+      weekStart: "desc",
+    },
+    take: 52,
+    select: {
+      id: true,
+      weekStart: true,
+      weekEnd: true,
+      payoutDate: true,
+      restaurantEarnings: true,
+      acceptedOrderCount: true,
+      status: true,
+    },
+  });
+
+  const londonNow = londonDateParts();
+
+  const currentMonthKey = dateKeyFromParts(
+    londonNow.year,
+    londonNow.month,
+    1,
+  ).slice(0, 7);
+
+  const paidThisMonthPence = payoutHistory
+    .filter((payout) => {
+      const status = String(
+        payout.status || "",
+      ).toLowerCase();
+
+      return (
+        (status === "paid" || status === "completed") &&
+        londonDateKey(payout.payoutDate).startsWith(
+          currentMonthKey,
+        )
+      );
+    })
+    .reduce(
+      (total, payout) =>
+        total + toPence(payout.restaurantEarnings),
+      0,
+    );
 
   return {
     user: {
@@ -1283,52 +1035,29 @@ export async function loader({
 
     restaurant: {
       id: user.Restaurant.id,
-
-      restaurantId:
-        user.Restaurant.restaurantId,
-
-      name:
-        user.Restaurant.name,
-
-      acceptingOrders:
-        user.Restaurant.acceptingOrders,
+      restaurantId: user.Restaurant.restaurantId,
+      name: user.Restaurant.name,
+      acceptingOrders: user.Restaurant.acceptingOrders,
     },
 
     orders: ordersWithDecisions,
-
     orderLoadError,
-
-    paidThisMonth:
-      paidThisMonthPence / 100,
-
+    paidThisMonth: paidThisMonthPence / 100,
     paymentSummary,
 
-    payoutHistory:
-      payoutHistory.map(
-        (payout) => ({
-          id: payout.id,
+    payoutHistory: payoutHistory.map((payout) => ({
+      id: payout.id,
+      weekStart: payout.weekStart,
+      weekEnd: payout.weekEnd,
+      payoutDate: payout.payoutDate,
 
-          weekStart:
-            payout.weekStart,
-
-          weekEnd:
-            payout.weekEnd,
-
-          payoutDate:
-            payout.payoutDate,
-
-          restaurantEarnings:
-            Number(
-              payout.restaurantEarnings,
-            ),
-
-          acceptedOrderCount:
-            payout.acceptedOrderCount,
-
-          status:
-            payout.status,
-        }),
+      restaurantEarnings: Number(
+        payout.restaurantEarnings,
       ),
+
+      acceptedOrderCount: payout.acceptedOrderCount,
+      status: payout.status,
+    })),
   };
 }
 
@@ -1338,26 +1067,15 @@ ACTION
 =========================================================
 */
 
-export async function action({
-  request,
-}) {
-  const user =
-    await getAuthenticatedUser(
-      request,
-    );
+export async function action({ request }) {
+  const user = await getAuthenticatedUser(request);
 
   if (!user) {
-    throw redirect(
-      "/restaurant/login",
-    );
+    throw redirect("/restaurant/login");
   }
 
-  const formData =
-    await request.formData();
-
-  const intent = String(
-    formData.get("intent") || "",
-  );
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "");
 
   /*
   =========================================================
@@ -1373,10 +1091,8 @@ export async function action({
       where: {
         id: user.Restaurant.id,
       },
-
       data: {
-        acceptingOrders:
-          intent === "resume-orders",
+        acceptingOrders: intent === "resume-orders",
       },
     });
 
@@ -1395,34 +1111,22 @@ export async function action({
     };
   }
 
-  const shopifyOrderId =
-    String(
-      formData.get(
-        "shopifyOrderId",
-      ) || "",
-    );
+  const shopifyOrderId = String(
+    formData.get("shopifyOrderId") || "",
+  );
 
-  const orderNumber =
-    String(
-      formData.get(
-        "orderNumber",
-      ) || "",
-    );
+  const orderNumber = String(
+    formData.get("orderNumber") || "",
+  );
 
-  if (
-    !shopifyOrderId ||
-    !orderNumber
-  ) {
+  if (!shopifyOrderId || !orderNumber) {
     return {
       success: false,
-
-      message:
-        "Order information is missing.",
+      message: "Order information is missing.",
     };
   }
 
-  const accepting =
-    intent === "accept-order";
+  const accepting = intent === "accept-order";
 
   const fail = (message) => ({
     success: false,
@@ -1438,22 +1142,16 @@ export async function action({
     ========================================================
     */
 
-    const existingDecision =
-      await db.orderDecision.findUnique({
-        where: {
-          shopifyOrderId_restaurantId: {
-            shopifyOrderId,
-
-            restaurantId:
-              user.Restaurant.id,
-          },
+    const existingDecision = await db.orderDecision.findUnique({
+      where: {
+        shopifyOrderId_restaurantId: {
+          shopifyOrderId,
+          restaurantId: user.Restaurant.id,
         },
-      });
+      },
+    });
 
-    if (
-      existingDecision?.status ===
-      "rejected"
-    ) {
+    if (existingDecision?.status === "rejected") {
       if (accepting) {
         return fail(
           "This order was already rejected and cannot be accepted.",
@@ -1468,10 +1166,7 @@ export async function action({
       };
     }
 
-    if (
-      existingDecision?.status ===
-      "accepted"
-    ) {
+    if (existingDecision?.status === "accepted") {
       if (!accepting) {
         return fail(
           "This order was already accepted and cannot be rejected.",
@@ -1479,16 +1174,11 @@ export async function action({
       }
 
       if (
-        existingDecision.paymentCaptured ===
-          true &&
-        existingDecision.foodSales !=
-          null &&
-        existingDecision.deliveryIncome !=
-          null &&
-        existingDecision.serviceFee !=
-          null &&
-        existingDecision.currencyCode ===
-          "GBP"
+        existingDecision.paymentCaptured === true &&
+        existingDecision.foodSales != null &&
+        existingDecision.deliveryIncome != null &&
+        existingDecision.serviceFee != null &&
+        existingDecision.currencyCode === "GBP"
       ) {
         return {
           success: true,
@@ -1505,18 +1195,14 @@ export async function action({
     ========================================================
     */
 
-    const restaurantOrders =
-      await getShopifyOrders(
-        user.Restaurant.restaurantId,
-        user.Restaurant.name,
-      );
+    const restaurantOrders = await getShopifyOrders(
+      user.Restaurant.restaurantId,
+      user.Restaurant.name,
+    );
 
-    const restaurantOrder =
-      restaurantOrders.find(
-        (order) =>
-          order.id ===
-          shopifyOrderId,
-      );
+    const restaurantOrder = restaurantOrders.find(
+      (order) => order.id === shopifyOrderId,
+    );
 
     if (!restaurantOrder) {
       return fail(
@@ -1524,13 +1210,8 @@ export async function action({
       );
     }
 
-    if (
-      restaurantOrder.orderNumber !==
-      orderNumber
-    ) {
-      return fail(
-        "Order verification failed.",
-      );
+    if (restaurantOrder.orderNumber !== orderNumber) {
+      return fail("Order verification failed.");
     }
 
     /*
@@ -1539,63 +1220,56 @@ export async function action({
     ========================================================
     */
 
-    const { admin } =
-      await shopify.unauthenticated.admin(
-        SHOP_DOMAIN,
-      );
+    const { admin } = await shopify.unauthenticated.admin(
+      SHOP_DOMAIN,
+    );
 
-    const paymentResponse =
-      await admin.graphql(
-        `
-          query MealDealHubPaymentCheck(
-            $id: ID!
-          ) {
-            order(id: $id) {
+    const paymentResponse = await admin.graphql(
+      `
+        query MealDealHubPaymentCheck($id: ID!) {
+          order(id: $id) {
+            id
+            name
+            displayFinancialStatus
+
+            currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+
+            transactions(first: 100) {
               id
-              name
-              displayFinancialStatus
+              kind
+              status
+              processedAt
 
-              currentTotalPriceSet {
+              amountSet {
                 shopMoney {
                   amount
                   currencyCode
                 }
-              }
 
-              transactions(first: 100) {
-                id
-                kind
-                status
-                processedAt
-
-                amountSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-
-                  presentmentMoney {
-                    amount
-                    currencyCode
-                  }
+                presentmentMoney {
+                  amount
+                  currencyCode
                 }
               }
             }
           }
-        `,
-        {
-          variables: {
-            id: shopifyOrderId,
-          },
+        }
+      `,
+      {
+        variables: {
+          id: shopifyOrderId,
         },
-      );
+      },
+    );
 
-    const paymentResult =
-      await paymentResponse.json();
+    const paymentResult = await paymentResponse.json();
 
-    if (
-      paymentResult.errors?.length
-    ) {
+    if (paymentResult.errors?.length) {
       console.error(
         "SHOPIFY PAYMENT LOOKUP ERROR:",
         paymentResult.errors,
@@ -1606,34 +1280,25 @@ export async function action({
       );
     }
 
-    const shopifyOrder =
-      paymentResult.data?.order;
+    const shopifyOrder = paymentResult.data?.order;
 
     if (
       !shopifyOrder ||
-      shopifyOrder.name !==
-        orderNumber
+      shopifyOrder.name !== orderNumber
     ) {
-      return fail(
-        "Shopify order verification failed.",
-      );
+      return fail("Shopify order verification failed.");
     }
 
-    const transactions =
-      shopifyOrder.transactions || [];
+    const transactions = shopifyOrder.transactions || [];
 
-    const successfulCapture =
-      transactions.find(
-        (transaction) =>
-          transaction.status ===
-            "SUCCESS" &&
-          (
-            transaction.kind ===
-              "CAPTURE" ||
-            transaction.kind ===
-              "SALE"
-          ),
-      );
+    const successfulCapture = transactions.find(
+      (transaction) =>
+        transaction.status === "SUCCESS" &&
+        (
+          transaction.kind === "CAPTURE" ||
+          transaction.kind === "SALE"
+        ),
+    );
 
     /*
     ========================================================
@@ -1648,24 +1313,18 @@ export async function action({
         );
       }
 
-      const successfulVoid =
-        transactions.find(
-          (transaction) =>
-            transaction.kind ===
-              "VOID" &&
-            transaction.status ===
-              "SUCCESS",
-        );
+      const successfulVoid = transactions.find(
+        (transaction) =>
+          transaction.kind === "VOID" &&
+          transaction.status === "SUCCESS",
+      );
 
       if (!successfulVoid) {
-        const authorization =
-          transactions.find(
-            (transaction) =>
-              transaction.kind ===
-                "AUTHORIZATION" &&
-              transaction.status ===
-                "SUCCESS",
-          );
+        const authorization = transactions.find(
+          (transaction) =>
+            transaction.kind === "AUTHORIZATION" &&
+            transaction.status === "SUCCESS",
+        );
 
         if (!authorization) {
           return fail(
@@ -1673,44 +1332,38 @@ export async function action({
           );
         }
 
-        const voidResponse =
-          await admin.graphql(
-            `
-              mutation MealDealHubVoidPayment(
-                $parentTransactionId: ID!
+        const voidResponse = await admin.graphql(
+          `
+            mutation MealDealHubVoidPayment(
+              $parentTransactionId: ID!
+            ) {
+              transactionVoid(
+                parentTransactionId: $parentTransactionId
               ) {
-                transactionVoid(
-                  parentTransactionId:
-                    $parentTransactionId
-                ) {
-                  transaction {
-                    id
-                    kind
-                    status
-                  }
+                transaction {
+                  id
+                  kind
+                  status
+                }
 
-                  userErrors {
-                    field
-                    message
-                    code
-                  }
+                userErrors {
+                  field
+                  message
+                  code
                 }
               }
-            `,
-            {
-              variables: {
-                parentTransactionId:
-                  authorization.id,
-              },
+            }
+          `,
+          {
+            variables: {
+              parentTransactionId: authorization.id,
             },
-          );
+          },
+        );
 
-        const voidResult =
-          await voidResponse.json();
+        const voidResult = await voidResponse.json();
 
-        if (
-          voidResult.errors?.length
-        ) {
+        if (voidResult.errors?.length) {
           console.error(
             "SHOPIFY VOID ERROR:",
             voidResult.errors,
@@ -1722,31 +1375,21 @@ export async function action({
         }
 
         const voidPayload =
-          voidResult.data
-            ?.transactionVoid;
+          voidResult.data?.transactionVoid;
 
-        const voidErrors =
-          voidPayload?.userErrors ||
-          [];
+        const voidErrors = voidPayload?.userErrors || [];
 
-        if (
-          voidErrors.length
-        ) {
+        if (voidErrors.length) {
           return fail(
             voidErrors
-              .map(
-                (error) =>
-                  error.message,
-              )
+              .map((error) => error.message)
               .join(" "),
           );
         }
 
         if (
-          voidPayload?.transaction
-            ?.kind !== "VOID" ||
-          voidPayload?.transaction
-            ?.status !== "SUCCESS"
+          voidPayload?.transaction?.kind !== "VOID" ||
+          voidPayload?.transaction?.status !== "SUCCESS"
         ) {
           return fail(
             "Shopify did not confirm the payment was voided.",
@@ -1754,39 +1397,36 @@ export async function action({
         }
       }
 
+      /*
+      ======================================================
+      FIX: SAVE REJECTED ORDER WITH updatedAt
+      ======================================================
+      */
+
+      const decisionTime = new Date();
+
       await db.orderDecision.upsert({
         where: {
           shopifyOrderId_restaurantId: {
             shopifyOrderId,
-
-            restaurantId:
-              user.Restaurant.id,
+            restaurantId: user.Restaurant.id,
           },
         },
 
         update: {
           status: "rejected",
           orderNumber,
+          updatedAt: decisionTime,
         },
 
         create: {
           shopifyOrderId,
           orderNumber,
-
-          restaurantId:
-            user.Restaurant.id,
-
+          restaurantId: user.Restaurant.id,
           status: "rejected",
+          updatedAt: decisionTime,
         },
       });
-
-      console.log(
-        "RESTAURANT ORDER REJECTED:",
-        {
-          shopifyOrderId,
-          orderNumber,
-        },
-      );
 
       return {
         success: true,
@@ -1802,18 +1442,14 @@ export async function action({
     ========================================================
     */
 
-    let captureTransaction =
-      successfulCapture;
+    let captureTransaction = successfulCapture;
 
     if (!captureTransaction) {
-      const authorization =
-        transactions.find(
-          (transaction) =>
-            transaction.kind ===
-              "AUTHORIZATION" &&
-            transaction.status ===
-              "SUCCESS",
-        );
+      const authorization = transactions.find(
+        (transaction) =>
+          transaction.kind === "AUTHORIZATION" &&
+          transaction.status === "SUCCESS",
+      );
 
       if (!authorization) {
         return fail(
@@ -1822,19 +1458,14 @@ export async function action({
       }
 
       const captureAmount =
-        authorization.amountSet
-          ?.presentmentMoney
+        authorization.amountSet?.presentmentMoney
           ?.amount ||
-        authorization.amountSet
-          ?.shopMoney?.amount;
+        authorization.amountSet?.shopMoney?.amount;
 
       const captureCurrency =
-        authorization.amountSet
-          ?.presentmentMoney
+        authorization.amountSet?.presentmentMoney
           ?.currencyCode ||
-        authorization.amountSet
-          ?.shopMoney
-          ?.currencyCode;
+        authorization.amountSet?.shopMoney?.currencyCode;
 
       if (
         !captureAmount ||
@@ -1846,58 +1477,48 @@ export async function action({
         );
       }
 
-      const captureResponse =
-        await admin.graphql(
-          `
-            mutation MealDealHubCaptureOrder(
-              $input: OrderCaptureInput!
-            ) {
-              orderCapture(input: $input) {
-                transaction {
-                  id
-                  kind
-                  status
-                  processedAt
+      const captureResponse = await admin.graphql(
+        `
+          mutation MealDealHubCaptureOrder(
+            $input: OrderCaptureInput!
+          ) {
+            orderCapture(input: $input) {
+              transaction {
+                id
+                kind
+                status
+                processedAt
 
-                  amountSet {
-                    shopMoney {
-                      amount
-                      currencyCode
-                    }
+                amountSet {
+                  shopMoney {
+                    amount
+                    currencyCode
                   }
                 }
+              }
 
-                userErrors {
-                  field
-                  message
-                }
+              userErrors {
+                field
+                message
               }
             }
-          `,
-          {
-            variables: {
-              input: {
-                id: shopifyOrderId,
-
-                parentTransactionId:
-                  authorization.id,
-
-                amount:
-                  captureAmount,
-
-                currency:
-                  captureCurrency,
-              },
+          }
+        `,
+        {
+          variables: {
+            input: {
+              id: shopifyOrderId,
+              parentTransactionId: authorization.id,
+              amount: captureAmount,
+              currency: captureCurrency,
             },
           },
-        );
+        },
+      );
 
-      const captureResult =
-        await captureResponse.json();
+      const captureResult = await captureResponse.json();
 
-      if (
-        captureResult.errors?.length
-      ) {
+      if (captureResult.errors?.length) {
         console.error(
           "SHOPIFY CAPTURE ERROR:",
           captureResult.errors,
@@ -1909,36 +1530,25 @@ export async function action({
       }
 
       const capturePayload =
-        captureResult.data
-          ?.orderCapture;
+        captureResult.data?.orderCapture;
 
       const captureErrors =
-        capturePayload?.userErrors ||
-        [];
+        capturePayload?.userErrors || [];
 
-      if (
-        captureErrors.length
-      ) {
+      if (captureErrors.length) {
         return fail(
           captureErrors
-            .map(
-              (error) =>
-                error.message,
-            )
+            .map((error) => error.message)
             .join(" "),
         );
       }
 
-      captureTransaction =
-        capturePayload
-          ?.transaction;
+      captureTransaction = capturePayload?.transaction;
 
       if (
         !captureTransaction ||
-        captureTransaction.status !==
-          "SUCCESS" ||
-        captureTransaction.kind !==
-          "CAPTURE"
+        captureTransaction.status !== "SUCCESS" ||
+        captureTransaction.kind !== "CAPTURE"
       ) {
         return fail(
           "Payment was not successfully captured.",
@@ -1952,30 +1562,20 @@ export async function action({
     ========================================================
     */
 
-    const foodSales =
-      Number(
-        restaurantOrder.foodTotal,
-      );
+    const foodSales = Number(restaurantOrder.foodTotal);
 
-    const deliveryIncome =
-      Number(
-        restaurantOrder.delivery,
-      );
+    const deliveryIncome = Number(
+      restaurantOrder.delivery,
+    );
 
-    const serviceFee =
-      Number(
-        restaurantOrder.serviceFee,
-      );
+    const serviceFee = Number(
+      restaurantOrder.serviceFee,
+    );
 
     if (
-      ![
-        foodSales,
-        deliveryIncome,
-        serviceFee,
-      ].every(
+      ![foodSales, deliveryIncome, serviceFee].every(
         (amount) =>
-          Number.isFinite(amount) &&
-          amount >= 0,
+          Number.isFinite(amount) && amount >= 0,
       )
     ) {
       return fail(
@@ -1984,17 +1584,13 @@ export async function action({
     }
 
     const currencyCode =
-      captureTransaction.amountSet
-        ?.shopMoney
+      captureTransaction.amountSet?.shopMoney
         ?.currencyCode ||
-      shopifyOrder.currentTotalPriceSet
-        ?.shopMoney
+      shopifyOrder.currentTotalPriceSet?.shopMoney
         ?.currencyCode ||
       "";
 
-    if (
-      currencyCode !== "GBP"
-    ) {
+    if (currencyCode !== "GBP") {
       return fail(
         "Payment was captured, but this currency requires manual review.",
       );
@@ -2004,40 +1600,33 @@ export async function action({
       existingDecision?.capturedAt ||
       (
         captureTransaction.processedAt
-          ? new Date(
-              captureTransaction.processedAt,
-            )
+          ? new Date(captureTransaction.processedAt)
           : new Date()
       );
 
+    /*
+    ========================================================
+    FIX: SAVE ACCEPTED ORDER WITH updatedAt
+    ========================================================
+    */
+
     const snapshot = {
       status: "accepted",
-
       orderNumber,
-
-      foodSales:
-        foodSales.toFixed(2),
-
-      deliveryIncome:
-        deliveryIncome.toFixed(2),
-
-      serviceFee:
-        serviceFee.toFixed(2),
-
+      foodSales: foodSales.toFixed(2),
+      deliveryIncome: deliveryIncome.toFixed(2),
+      serviceFee: serviceFee.toFixed(2),
       paymentCaptured: true,
-
       capturedAt,
-
       currencyCode,
+      updatedAt: new Date(),
     };
 
     await db.orderDecision.upsert({
       where: {
         shopifyOrderId_restaurantId: {
           shopifyOrderId,
-
-          restaurantId:
-            user.Restaurant.id,
+          restaurantId: user.Restaurant.id,
         },
       },
 
@@ -2045,30 +1634,20 @@ export async function action({
 
       create: {
         shopifyOrderId,
-
-        restaurantId:
-          user.Restaurant.id,
-
+        restaurantId: user.Restaurant.id,
         ...snapshot,
       },
     });
 
-    console.log(
-      "RESTAURANT PAYMENT SAVED:",
-      {
-        shopifyOrderId,
-        orderNumber,
-
-        restaurantId:
-          user.Restaurant.id,
-
-        foodSales,
-        deliveryIncome,
-        serviceFee,
-
-        paymentCaptured: true,
-      },
-    );
+    console.log("RESTAURANT PAYMENT SAVED:", {
+      shopifyOrderId,
+      orderNumber,
+      restaurantId: user.Restaurant.id,
+      foodSales,
+      deliveryIncome,
+      serviceFee,
+      paymentCaptured: true,
+    });
 
     return {
       success: true,
@@ -2094,11 +1673,8 @@ ORDER COMPONENTS
 =========================================================
 */
 
-function OrderTypeBadge({
-  orderType,
-}) {
-  const pickup =
-    orderType === "pickup";
+function OrderTypeBadge({ orderType }) {
+  const pickup = orderType === "pickup";
 
   return (
     <span
@@ -2108,38 +1684,25 @@ function OrderTypeBadge({
           : styles.deliveryBadge
       }
     >
-      {pickup
-        ? "🛍 COLLECTION"
-        : "🚗 DELIVERY"}
+      {pickup ? "🛍 COLLECTION" : "🚗 DELIVERY"}
     </span>
   );
 }
 
-function OrderDetails({
-  order,
-  showStatus = false,
-}) {
-  if (!order) {
-    return null;
-  }
+function OrderDetails({ order, showStatus = false }) {
+  if (!order) return null;
 
   return (
     <>
       <div style={styles.detailTop}>
         <div>
-          <OrderTypeBadge
-            orderType={order.orderType}
-          />
+          <OrderTypeBadge orderType={order.orderType} />
 
-          <h2
-            style={styles.orderNumber}
-          >
+          <h2 style={styles.orderNumber}>
             {order.orderNumber}
           </h2>
 
-          <div
-            style={styles.greyText}
-          >
+          <div style={styles.greyText}>
             {order.dateTime}
           </div>
         </div>
@@ -2150,232 +1713,100 @@ function OrderDetails({
       </div>
 
       {showStatus && (
-        <div
-          style={{
-            marginTop: 14,
-          }}
-        >
+        <div style={{ marginTop: 14 }}>
           <span
             style={
-              order.status ===
-              "accepted"
+              order.status === "accepted"
                 ? styles.acceptedBadge
                 : styles.rejectedBadge
             }
           >
-            {String(
-              order.status || "",
-            ).toUpperCase()}
+            {String(order.status || "").toUpperCase()}
           </span>
         </div>
       )}
 
-      <div
-        style={
-          styles.customerDetails
-        }
-      >
-        <div
-          style={
-            styles.sectionLabel
-          }
-        >
+      <div style={styles.customerDetails}>
+        <div style={styles.sectionLabel}>
           CUSTOMER DETAILS
         </div>
 
-        <div
-          style={styles.infoLine}
-        >
+        <div style={styles.infoLine}>
           <span>Customer</span>
-
-          <strong>
-            {order.customer ||
-              "Customer"}
-          </strong>
+          <strong>{order.customer || "Customer"}</strong>
         </div>
 
         {order.customerPhone && (
-          <div
-            style={
-              styles.infoLine
-            }
-          >
+          <div style={styles.infoLine}>
             <span>Phone</span>
-
-            <strong>
-              {order.customerPhone}
-            </strong>
+            <strong>{order.customerPhone}</strong>
           </div>
         )}
 
         {order.customerEmail && (
-          <div
-            style={
-              styles.infoLine
-            }
-          >
+          <div style={styles.infoLine}>
             <span>Email</span>
-
-            <strong
-              style={{
-                overflowWrap:
-                  "anywhere",
-              }}
-            >
+            <strong style={{ overflowWrap: "anywhere" }}>
               {order.customerEmail}
             </strong>
           </div>
         )}
 
-        {order.orderType ===
-          "delivery" &&
+        {order.orderType === "delivery" &&
           order.customerAddress && (
-            <div
-              style={
-                styles.infoLine
-              }
-            >
-              <span>
-                Delivery address
-              </span>
-
-              <strong>
-                {
-                  order.customerAddress
-                }
-              </strong>
+            <div style={styles.infoLine}>
+              <span>Delivery address</span>
+              <strong>{order.customerAddress}</strong>
             </div>
           )}
 
-        {order.orderType ===
-          "pickup" &&
+        {order.orderType === "pickup" &&
           order.pickupLocation && (
-            <div
-              style={
-                styles.infoLine
-              }
-            >
-              <span>
-                Collection location
-              </span>
-
-              <strong>
-                {
-                  order.pickupLocation
-                }
-              </strong>
+            <div style={styles.infoLine}>
+              <span>Collection location</span>
+              <strong>{order.pickupLocation}</strong>
             </div>
           )}
       </div>
 
-      <div
-        style={styles.items}
-      >
-        <div
-          style={
-            styles.sectionLabel
-          }
-        >
+      <div style={styles.items}>
+        <div style={styles.sectionLabel}>
           ORDER ITEMS
         </div>
 
-        {(order.items || []).map(
-          (item, index) => (
-            <div
-              key={index}
-              style={
-                styles.item
-              }
-            >
-              <span
-                style={
-                  styles.quantity
-                }
-              >
-                {item.quantity}×
-              </span>
-
-              <span>
-                {item.name}
-              </span>
-            </div>
-          ),
-        )}
+        {(order.items || []).map((item, index) => (
+          <div key={index} style={styles.item}>
+            <span style={styles.quantity}>
+              {item.quantity}×
+            </span>
+            <span>{item.name}</span>
+          </div>
+        ))}
       </div>
 
-      <div
-        style={
-          styles.orderBreakdown
-        }
-      >
-        <div
-          style={
-            styles.breakdownRow
-          }
-        >
+      <div style={styles.orderBreakdown}>
+        <div style={styles.breakdownRow}>
           <span>Food</span>
-
-          <strong>
-            {money(
-              order.foodTotal,
-            )}
-          </strong>
+          <strong>{money(order.foodTotal)}</strong>
         </div>
 
-        {Number(
-          order.delivery || 0,
-        ) > 0 && (
-          <div
-            style={
-              styles.breakdownRow
-            }
-          >
-            <span>
-              Delivery
-            </span>
-
-            <strong>
-              {money(
-                order.delivery,
-              )}
-            </strong>
+        {Number(order.delivery || 0) > 0 && (
+          <div style={styles.breakdownRow}>
+            <span>Delivery</span>
+            <strong>{money(order.delivery)}</strong>
           </div>
         )}
 
-        {Number(
-          order.serviceFee || 0,
-        ) > 0 && (
-          <div
-            style={
-              styles.breakdownRow
-            }
-          >
-            <span>
-              Service fee
-            </span>
-
-            <strong>
-              {money(
-                order.serviceFee,
-              )}
-            </strong>
+        {Number(order.serviceFee || 0) > 0 && (
+          <div style={styles.breakdownRow}>
+            <span>Service fee</span>
+            <strong>{money(order.serviceFee)}</strong>
           </div>
         )}
 
-        <div
-          style={
-            styles.breakdownTotal
-          }
-        >
-          <span>
-            ORDER TOTAL
-          </span>
-
-          <strong>
-            {money(
-              order.total,
-            )}
-          </strong>
+        <div style={styles.breakdownTotal}>
+          <span>ORDER TOTAL</span>
+          <strong>{money(order.total)}</strong>
         </div>
       </div>
     </>
@@ -2392,308 +1823,69 @@ export default function RestaurantDashboard() {
   const {
     restaurant,
     user,
-
-    orders:
-      shopifyOrders,
-
+    orders: shopifyOrders,
     orderLoadError = "",
-
     paidThisMonth = 0,
-
     paymentSummary,
-
     payoutHistory = [],
   } = useLoaderData();
 
-  const navigation =
-    useNavigation();
+  const navigation = useNavigation();
+  const revalidator = useRevalidator();
+  const orderFetcher = useFetcher();
 
-  const revalidator =
-    useRevalidator();
+  const [activeTab, setActiveTab] = useState("orders");
+  const [orders, setOrders] = useState(shopifyOrders || []);
 
-  const orderFetcher =
-    useFetcher();
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
 
-  const [
-    activeTab,
-    setActiveTab,
-  ] = useState("orders");
+  const [selectedOrderId, setSelectedOrderId] =
+    useState(null);
 
-  const [
-    orders,
-    setOrders,
-  ] = useState(
-    shopifyOrders || [],
-  );
+  const [pendingOrderAction, setPendingOrderAction] =
+    useState(null);
 
-  const [
-    soundEnabled,
-    setSoundEnabled,
-  ] = useState(true);
+  const [showAllOrders, setShowAllOrders] =
+    useState(false);
 
-  const [
-    soundUnlocked,
-    setSoundUnlocked,
-  ] = useState(false);
-
-  const [
-    selectedOrderId,
-    setSelectedOrderId,
-  ] = useState(null);
-
-  const [
-    pendingOrderAction,
-    setPendingOrderAction,
-  ] = useState(null);
-
-  const [
-    showAllOrders,
-    setShowAllOrders,
-  ] = useState(false);
-
-  const [
-    actionError,
-    setActionError,
-  ] = useState("");
-
-  const audioContextRef =
-    useRef(null);
-
-  const alarmTimerRef =
-    useRef(null);
-
-  const soundEnabledRef =
-    useRef(true);
-
-  /*
-  =========================================================
-  IMPORTANT: CONFIRMED ORDER STATUS MEMORY
-
-  This remembers successful action responses
-  until the server loader confirms the saved
-  decision.
-
-  It prevents a stale refresh from putting
-  an accepted/rejected order back into
-  New Orders.
-  =========================================================
-  */
-
-  const confirmedStatusesRef =
-    useRef(new Map());
-
-  const processedActionRef =
-    useRef(null);
-
-  const pendingActionRef =
-    useRef(null);
-
-  const fetcherStateRef =
-    useRef("idle");
-
-  const revalidatorStateRef =
-    useRef("idle");
-
-  const revalidateRef =
-    useRef(null);
-
-  /*
-  Keep references current for timers and
-  visibility events.
-  */
-
-  pendingActionRef.current =
-    pendingOrderAction;
-
-  fetcherStateRef.current =
-    orderFetcher.state;
-
-  revalidatorStateRef.current =
-    revalidator.state;
-
-  revalidateRef.current =
-    revalidator.revalidate;
-
-  /*
-  =========================================================
-  SAFE ORDER MERGING
-  =========================================================
-  */
-
-  function applyConfirmedStatuses(
-    incomingOrders,
-  ) {
-    return (
-      incomingOrders || []
-    ).map((order) => {
-      const confirmedStatus =
-        confirmedStatusesRef.current.get(
-          order.id,
-        );
-
-      if (
-        !confirmedStatus
-      ) {
-        return order;
-      }
-
-      return {
-        ...order,
-        status:
-          confirmedStatus,
-      };
-    });
-  }
+  const audioContextRef = useRef(null);
+  const alarmTimerRef = useRef(null);
+  const soundEnabledRef = useRef(true);
 
   /*
   =========================================================
   AUTO REFRESH
-
-  Refresh every five seconds only while
-  the page is visible and no order action
-  is being processed.
   =========================================================
   */
 
   useEffect(() => {
-    function refreshOrders() {
+    const interval = setInterval(() => {
       if (
-        document.visibilityState !==
-        "visible"
+        orderFetcher.state === "idle" &&
+        revalidator.state === "idle"
       ) {
-        return;
+        revalidator.revalidate();
       }
+    }, 5000);
 
-      if (
-        pendingActionRef.current
-      ) {
-        return;
-      }
-
-      if (
-        fetcherStateRef.current !==
-        "idle"
-      ) {
-        return;
-      }
-
-      if (
-        revalidatorStateRef.current !==
-        "idle"
-      ) {
-        return;
-      }
-
-      revalidateRef.current?.();
-    }
-
-    const interval =
-      setInterval(
-        refreshOrders,
-        5000,
-      );
-
-    /*
-    Refresh when the phone is unlocked
-    or the browser tab becomes active.
-    */
-
-    function handleVisibilityChange() {
-      if (
-        document.visibilityState ===
-        "visible"
-      ) {
-        refreshOrders();
-      }
-    }
-
-    function handleWindowFocus() {
-      refreshOrders();
-    }
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange,
-    );
-
-    window.addEventListener(
-      "focus",
-      handleWindowFocus,
-    );
-
-    return () => {
-      clearInterval(
-        interval,
-      );
-
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange,
-      );
-
-      window.removeEventListener(
-        "focus",
-        handleWindowFocus,
-      );
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [
+    orderFetcher.state,
+    revalidator,
+    revalidator.state,
+  ]);
 
   /*
   =========================================================
-  SYNC SERVER ORDERS
-
-  Server decisions are authoritative.
-
-  Keep recently confirmed statuses while
-  an older loader response is still arriving.
+  SYNC ORDERS
   =========================================================
   */
 
   useEffect(() => {
-    if (orderLoadError) {
-      return;
+    if (!pendingOrderAction && !orderLoadError) {
+      setOrders(shopifyOrders || []);
     }
-
-    const confirmed =
-      confirmedStatusesRef.current;
-
-    /*
-    Once the server reports the same saved
-    status, local protection is no longer
-    necessary.
-    */
-
-    for (
-      const order of
-      shopifyOrders || []
-    ) {
-      const protectedStatus =
-        confirmed.get(
-          order.id,
-        );
-
-      if (
-        protectedStatus &&
-        order.status ===
-          protectedStatus
-      ) {
-        confirmed.delete(
-          order.id,
-        );
-      }
-    }
-
-    if (
-      pendingOrderAction
-    ) {
-      return;
-    }
-
-    setOrders(
-      applyConfirmedStatuses(
-        shopifyOrders,
-      ),
-    );
   }, [
     shopifyOrders,
     pendingOrderAction,
@@ -2703,176 +1895,45 @@ export default function RestaurantDashboard() {
   /*
   =========================================================
   ACCEPT / REJECT RESPONSE
-
-  Do not confuse a successful optimistic
-  display update with an actual saved
-  Shopify payment decision.
   =========================================================
   */
 
   useEffect(() => {
     if (
       !pendingOrderAction ||
-      orderFetcher.state !==
-        "idle" ||
+      orderFetcher.state !== "idle" ||
       !orderFetcher.data
     ) {
       return;
     }
 
-    const response =
-      orderFetcher.data;
-
-    /*
-    Ensure the response belongs to the
-    order currently being processed.
-    */
-
-    if (
-      response.shopifyOrderId !==
-      pendingOrderAction.orderId
-    ) {
+    if (orderFetcher.data.success === true) {
+      setPendingOrderAction(null);
+      revalidator.revalidate();
       return;
     }
 
-    const responseKey =
-      [
-        response.shopifyOrderId,
-        response.status || "",
-        response.success,
-        response.message || "",
-      ].join("|");
-
-    if (
-      processedActionRef.current ===
-      responseKey
-    ) {
-      return;
-    }
-
-    processedActionRef.current =
-      responseKey;
-
-    if (
-      response.success ===
-        true
-    ) {
-      const savedStatus =
-        response.status;
-
-      if (
-        savedStatus !==
-          "accepted" &&
-        savedStatus !==
-          "rejected"
-      ) {
-        setPendingOrderAction(
-          null,
-        );
-
-        setActionError(
-          "The server returned an unexpected order status.",
-        );
-
-        return;
-      }
-
-      /*
-      Protect the confirmed decision
-      from stale loader responses.
-      */
-
-      confirmedStatusesRef.current.set(
-        pendingOrderAction.orderId,
-        savedStatus,
+    if (orderFetcher.data.success === false) {
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === pendingOrderAction.orderId
+            ? { ...order, status: "new" }
+            : order,
+        ),
       );
 
-      setOrders(
-        (currentOrders) =>
-          currentOrders.map(
-            (order) =>
-              order.id ===
-              pendingOrderAction.orderId
-                ? {
-                    ...order,
-
-                    status:
-                      savedStatus,
-                  }
-                : order,
-          ),
-      );
-
-      setActionError("");
-
-      setPendingOrderAction(
-        null,
-      );
-
-      /*
-      React Router normally revalidates
-      after successful fetcher actions.
-
-      The regular polling cycle will
-      provide an additional refresh.
-      */
-
-      return;
-    }
-
-    /*
-    FAILURE
-
-    Do not permanently accept or reject
-    an order unless the server succeeded.
-    */
-
-    if (
-      response.success ===
-        false
-    ) {
-      const failedOrderId =
-        pendingOrderAction.orderId;
-
-      confirmedStatusesRef.current.delete(
-        failedOrderId,
-      );
-
-      setOrders(
-        (currentOrders) =>
-          currentOrders.map(
-            (order) =>
-              order.id ===
-              failedOrderId
-                ? {
-                    ...order,
-
-                    status: "new",
-                  }
-                : order,
-          ),
-      );
-
-      setPendingOrderAction(
-        null,
-      );
-
-      const message =
-        response.message ||
-        "The order could not be updated. Please try again.";
-
-      setActionError(
-        message,
-      );
+      setPendingOrderAction(null);
 
       window.alert(
-        message,
+        orderFetcher.data.message ||
+          "The order could not be updated. Please try again.",
       );
     }
   }, [
     orderFetcher.state,
     orderFetcher.data,
     pendingOrderAction,
+    revalidator,
   ]);
 
   /*
@@ -2884,162 +1945,96 @@ export default function RestaurantDashboard() {
   useEffect(() => {
     try {
       const savedSetting =
-        window.localStorage.getItem(
-          "mdh_order_sound",
-        );
+        window.localStorage.getItem("mdh_order_sound");
 
-      if (
-        savedSetting ===
-        "off"
-      ) {
-        setSoundEnabled(
-          false,
-        );
-
-        soundEnabledRef.current =
-          false;
+      if (savedSetting === "off") {
+        setSoundEnabled(false);
+        soundEnabledRef.current = false;
       } else {
-        setSoundEnabled(
-          true,
-        );
-
-        soundEnabledRef.current =
-          true;
+        setSoundEnabled(true);
+        soundEnabledRef.current = true;
       }
     } catch {
-      setSoundEnabled(
-        true,
-      );
-
-      soundEnabledRef.current =
-        true;
+      setSoundEnabled(true);
+      soundEnabledRef.current = true;
     }
   }, []);
 
-  /*
-  =========================================================
-  RESTAURANT ORDER FILTERS
-  =========================================================
-  */
+  const restaurantOrders = orders.filter(
+    (order) =>
+      normaliseText(order.restaurantId) ===
+      normaliseText(restaurant.restaurantId),
+  );
 
-  const restaurantOrders =
-    orders.filter(
-      (order) =>
-        normaliseText(
-          order.restaurantId,
-        ) ===
-        normaliseText(
-          restaurant.restaurantId,
-        ),
-    );
+  const newOrders = restaurantOrders.filter(
+    (order) => order.status === "new",
+  );
 
-  const newOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status ===
-        "new",
-    );
+  const acceptedOrders = restaurantOrders.filter(
+    (order) => order.status === "accepted",
+  );
 
-  const acceptedOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status ===
-        "accepted",
-    );
-
-  const rejectedOrders =
-    restaurantOrders.filter(
-      (order) =>
-        order.status ===
-        "rejected",
-    );
+  const rejectedOrders = restaurantOrders.filter(
+    (order) => order.status === "rejected",
+  );
 
   const previousOrders = [
     ...acceptedOrders,
     ...rejectedOrders,
   ].sort(
     (a, b) =>
-      new Date(
-        b.createdAt,
-      ).getTime() -
-      new Date(
-        a.createdAt,
-      ).getTime(),
+      new Date(b.createdAt).getTime() -
+      new Date(a.createdAt).getTime(),
   );
 
-  const visiblePreviousOrders =
-    showAllOrders
-      ? previousOrders
-      : previousOrders.slice(
-          0,
-          5,
-        );
+  const visiblePreviousOrders = showAllOrders
+    ? previousOrders
+    : previousOrders.slice(0, 5);
 
   const selectedOrder =
     restaurantOrders.find(
-      (order) =>
-        order.id ===
-        selectedOrderId,
+      (order) => order.id === selectedOrderId,
     ) || null;
 
-  const paymentWeek =
-    getCurrentPaymentWeek();
+  const paymentWeek = getCurrentPaymentWeek();
 
   /*
   =========================================================
-  VERIFIED PAYMENT TOTALS
+  PAYMENT TOTALS
   =========================================================
   */
 
-  const acceptedFoodSales =
-    Number(
-      paymentSummary?.foodSales ||
-      0,
-    );
+  const acceptedFoodSales = Number(
+    paymentSummary?.foodSales || 0,
+  );
 
-  const deliveryIncome =
-    Number(
-      paymentSummary
-        ?.deliveryIncome || 0,
-    );
+  const deliveryIncome = Number(
+    paymentSummary?.deliveryIncome || 0,
+  );
 
-  const commission =
-    Number(
-      paymentSummary?.commission ||
-      0,
-    );
+  const commission = Number(
+    paymentSummary?.commission || 0,
+  );
 
-  const restaurantEarnings =
-    Number(
-      paymentSummary
-        ?.restaurantEarnings || 0,
-    );
+  const restaurantEarnings = Number(
+    paymentSummary?.restaurantEarnings || 0,
+  );
 
-  const serviceFees =
-    Number(
-      paymentSummary
-        ?.serviceFees || 0,
-    );
+  const serviceFees = Number(
+    paymentSummary?.serviceFees || 0,
+  );
 
-  const verifiedAcceptedOrderCount =
-    Number(
-      paymentSummary
-        ?.acceptedOrderCount || 0,
-    );
+  const verifiedAcceptedOrderCount = Number(
+    paymentSummary?.acceptedOrderCount || 0,
+  );
 
-  const firstNewOrder =
-    newOrders[0];
+  const firstNewOrder = newOrders[0];
 
-  const isSaving =
-    navigation.state ===
-    "submitting";
+  const isSaving = navigation.state === "submitting";
 
   const orderActionSaving =
-    orderFetcher.state !==
-      "idle" ||
-    Boolean(
-      pendingOrderAction,
-    );
+    orderFetcher.state !== "idle" ||
+    Boolean(pendingOrderAction);
 
   /*
   =========================================================
@@ -3047,65 +2042,26 @@ export default function RestaurantDashboard() {
   =========================================================
   */
 
-  function handleOrderDecision(
-    order,
-    action,
-  ) {
-    if (
-      !order ||
-      orderActionSaving
-    ) {
-      return;
-    }
-
-    if (
-      order.status !==
-      "new"
-    ) {
-      return;
-    }
+  function handleOrderDecision(order, action) {
+    if (!order || orderActionSaving) return;
 
     const status =
-      action === "accept"
-        ? "accepted"
-        : "rejected";
-
-    setActionError("");
-
-    processedActionRef.current =
-      null;
+      action === "accept" ? "accepted" : "rejected";
 
     setPendingOrderAction({
       orderId: order.id,
       action,
     });
 
-    /*
-    Optimistic update:
-    Immediately remove the order from
-    the New Orders panel.
-
-    If the server fails, it will be
-    restored automatically.
-    */
-
-    setOrders(
-      (currentOrders) =>
-        currentOrders.map(
-          (currentOrder) =>
-            currentOrder.id ===
-            order.id
-              ? {
-                  ...currentOrder,
-
-                  status,
-                }
-              : currentOrder,
-        ),
+    setOrders((currentOrders) =>
+      currentOrders.map((currentOrder) =>
+        currentOrder.id === order.id
+          ? { ...currentOrder, status }
+          : currentOrder,
+      ),
     );
 
-    const formData =
-      new FormData();
+    const formData = new FormData();
 
     formData.set(
       "intent",
@@ -3114,22 +2070,12 @@ export default function RestaurantDashboard() {
         : "reject-order",
     );
 
-    formData.set(
-      "shopifyOrderId",
-      order.id,
-    );
+    formData.set("shopifyOrderId", order.id);
+    formData.set("orderNumber", order.orderNumber);
 
-    formData.set(
-      "orderNumber",
-      order.orderNumber,
-    );
-
-    orderFetcher.submit(
-      formData,
-      {
-        method: "post",
-      },
-    );
+    orderFetcher.submit(formData, {
+      method: "post",
+    });
   }
 
   /*
@@ -3139,15 +2085,9 @@ export default function RestaurantDashboard() {
   */
 
   function stopAlarm() {
-    if (
-      alarmTimerRef.current
-    ) {
-      clearInterval(
-        alarmTimerRef.current,
-      );
-
-      alarmTimerRef.current =
-        null;
+    if (alarmTimerRef.current) {
+      clearInterval(alarmTimerRef.current);
+      alarmTimerRef.current = null;
     }
   }
 
@@ -3157,38 +2097,23 @@ export default function RestaurantDashboard() {
         window.AudioContext ||
         window.webkitAudioContext;
 
-      if (!AudioContext) {
-        return;
+      if (!AudioContext) return;
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
       }
 
-      if (
-        !audioContextRef.current
-      ) {
-        audioContextRef.current =
-          new AudioContext();
-      }
+      const context = audioContextRef.current;
 
-      const context =
-        audioContextRef.current;
-
-      if (
-        context.state ===
-        "suspended"
-      ) {
+      if (context.state === "suspended") {
         context.resume();
       }
 
-      const oscillator =
-        context.createOscillator();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
 
-      const gain =
-        context.createGain();
-
-      oscillator.type =
-        "square";
-
-      oscillator.frequency.value =
-        880;
+      oscillator.type = "square";
+      oscillator.frequency.value = 880;
 
       gain.gain.setValueAtTime(
         0.9,
@@ -3197,39 +2122,22 @@ export default function RestaurantDashboard() {
 
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        context.currentTime +
-          0.7,
+        context.currentTime + 0.7,
       );
 
-      oscillator.connect(
-        gain,
-      );
-
-      gain.connect(
-        context.destination,
-      );
+      oscillator.connect(gain);
+      gain.connect(context.destination);
 
       oscillator.start();
-
-      oscillator.stop(
-        context.currentTime +
-          0.7,
-      );
+      oscillator.stop(context.currentTime + 0.7);
     } catch (error) {
-      console.log(
-        "Alarm unavailable",
-        error,
-      );
+      console.log("Alarm unavailable", error);
     }
   }
 
   function enableSound() {
-    setSoundEnabled(
-      true,
-    );
-
-    soundEnabledRef.current =
-      true;
+    setSoundEnabled(true);
+    soundEnabledRef.current = true;
 
     try {
       window.localStorage.setItem(
@@ -3245,42 +2153,26 @@ export default function RestaurantDashboard() {
         window.AudioContext ||
         window.webkitAudioContext;
 
-      if (
-        AudioContext &&
-        !audioContextRef.current
-      ) {
-        audioContextRef.current =
-          new AudioContext();
+      if (AudioContext && !audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
       }
 
       if (
-        audioContextRef.current
-          ?.state ===
-        "suspended"
+        audioContextRef.current?.state === "suspended"
       ) {
         audioContextRef.current.resume();
       }
 
-      setSoundUnlocked(
-        true,
-      );
-
+      setSoundUnlocked(true);
       makeAlarmSound();
     } catch (error) {
-      console.log(
-        "Order sound unavailable",
-        error,
-      );
+      console.log("Order sound unavailable", error);
     }
   }
 
   function disableSound() {
-    setSoundEnabled(
-      false,
-    );
-
-    soundEnabledRef.current =
-      false;
+    setSoundEnabled(false);
+    soundEnabledRef.current = false;
 
     try {
       window.localStorage.setItem(
@@ -3294,49 +2186,28 @@ export default function RestaurantDashboard() {
     stopAlarm();
   }
 
-  /*
-  =========================================================
-  UNLOCK AUDIO AFTER USER INTERACTION
-  =========================================================
-  */
-
   useEffect(() => {
     function unlockOrderSound() {
-      if (
-        !soundEnabledRef.current
-      ) {
-        return;
-      }
+      if (!soundEnabledRef.current) return;
 
       try {
         const AudioContext =
           window.AudioContext ||
           window.webkitAudioContext;
 
-        if (!AudioContext) {
-          return;
+        if (!AudioContext) return;
+
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext();
         }
 
-        if (
-          !audioContextRef.current
-        ) {
-          audioContextRef.current =
-            new AudioContext();
-        }
+        const context = audioContextRef.current;
 
-        const context =
-          audioContextRef.current;
-
-        if (
-          context.state ===
-          "suspended"
-        ) {
+        if (context.state === "suspended") {
           context.resume();
         }
 
-        setSoundUnlocked(
-          true,
-        );
+        setSoundUnlocked(true);
       } catch (error) {
         console.log(
           "Order sound unlock unavailable",
@@ -3348,19 +2219,13 @@ export default function RestaurantDashboard() {
     document.addEventListener(
       "pointerdown",
       unlockOrderSound,
-      {
-        once: true,
-        capture: true,
-      },
+      { once: true, capture: true },
     );
 
     document.addEventListener(
       "keydown",
       unlockOrderSound,
-      {
-        once: true,
-        capture: true,
-      },
+      { once: true, capture: true },
     );
 
     return () => {
@@ -3378,15 +2243,6 @@ export default function RestaurantDashboard() {
     };
   }, []);
 
-  /*
-  =========================================================
-  NEW ORDER ALARM
-
-  Alarm runs only while genuine new
-  orders are visible.
-  =========================================================
-  */
-
   useEffect(() => {
     stopAlarm();
 
@@ -3397,17 +2253,12 @@ export default function RestaurantDashboard() {
     ) {
       makeAlarmSound();
 
-      alarmTimerRef.current =
-        setInterval(
-          () => {
-            makeAlarmSound();
-          },
-          1500,
-        );
+      alarmTimerRef.current = setInterval(() => {
+        makeAlarmSound();
+      }, 1500);
     }
 
-    return () =>
-      stopAlarm();
+    return () => stopAlarm();
   }, [
     newOrders.length,
     soundEnabled,
@@ -3421,9 +2272,7 @@ export default function RestaurantDashboard() {
   */
 
   return (
-    <main
-      style={styles.page}
-    >
+    <main style={styles.page}>
       <style>
         {`
           * {
@@ -3496,54 +2345,29 @@ export default function RestaurantDashboard() {
         `}
       </style>
 
-      <header
-        style={styles.header}
-      >
+      <header style={styles.header}>
         <div
           className="mdh-header-inner"
-          style={
-            styles.headerInner
-          }
+          style={styles.headerInner}
         >
-          <div
-            style={
-              styles.headerIdentity
-            }
-          >
+          <div style={styles.headerIdentity}>
             <img
               className="mdh-header-logo"
               src="/meal-deal-hub-logo.png"
               alt="Meal Deal Hub"
-              style={
-                styles.logo
-              }
+              style={styles.logo}
             />
 
-            <div
-              style={{
-                minWidth: 0,
-              }}
-            >
+            <div style={{ minWidth: 0 }}>
               <h1
                 className="mdh-header-name"
-                style={
-                  styles.restaurantName
-                }
+                style={styles.restaurantName}
               >
-                {
-                  restaurant.name
-                }
+                {restaurant.name}
               </h1>
 
-              <div
-                style={
-                  styles.location
-                }
-              >
-                ID:{" "}
-                {
-                  restaurant.restaurantId
-                }
+              <div style={styles.location}>
+                ID: {restaurant.restaurantId}
               </div>
             </div>
           </div>
@@ -3565,57 +2389,30 @@ export default function RestaurantDashboard() {
 
       <div
         className="mdh-content"
-        style={
-          styles.container
-        }
+        style={styles.container}
       >
-        {activeTab ===
-          "orders" && (
+        {activeTab === "orders" && (
           <>
-            <div
-              style={
-                styles.pageIntro
-              }
-            >
+            <div style={styles.pageIntro}>
               <div>
-                <h2
-                  style={
-                    styles.pageTitle
-                  }
-                >
+                <h2 style={styles.pageTitle}>
                   Orders
                 </h2>
 
-                <p
-                  style={
-                    styles.pageSubtitle
-                  }
-                >
-                  Manage incoming
-                  orders
+                <p style={styles.pageSubtitle}>
+                  Manage incoming orders
                 </p>
               </div>
 
-              <span
-                style={
-                  styles.liveIndicator
-                }
-              >
+              <span style={styles.liveIndicator}>
                 ● LIVE
               </span>
             </div>
 
-            <section
-              style={
-                styles.controls
-              }
-            >
+            <section style={styles.controls}>
               <Form
                 method="post"
-                style={{
-                  flex:
-                    "1 1 150px",
-                }}
+                style={{ flex: "1 1 150px" }}
               >
                 <input
                   type="hidden"
@@ -3630,18 +2427,10 @@ export default function RestaurantDashboard() {
                 <button
                   className="mdh-dashboard-button"
                   type="submit"
-                  disabled={
-                    isSaving
-                  }
-                  style={
-                    styles.controlButton
-                  }
+                  disabled={isSaving}
+                  style={styles.controlButton}
                 >
-                  <span
-                    style={
-                      styles.controlIcon
-                    }
-                  >
+                  <span style={styles.controlIcon}>
                     {restaurant.acceptingOrders
                       ? "⏸"
                       : "▶"}
@@ -3660,8 +2449,7 @@ export default function RestaurantDashboard() {
                 type="button"
                 style={{
                   ...styles.controlButton,
-                  flex:
-                    "1 1 150px",
+                  flex: "1 1 150px",
                 }}
                 onClick={
                   soundEnabled
@@ -3669,151 +2457,62 @@ export default function RestaurantDashboard() {
                     : enableSound
                 }
               >
-                <span
-                  style={
-                    styles.controlIcon
-                  }
-                >
-                  {soundEnabled
-                    ? "🔊"
-                    : "🔇"}
+                <span style={styles.controlIcon}>
+                  {soundEnabled ? "🔊" : "🔇"}
                 </span>
 
-                SOUND{" "}
-                {soundEnabled
-                  ? "ON"
-                  : "OFF"}
+                SOUND {soundEnabled ? "ON" : "OFF"}
               </button>
             </section>
 
-            {soundEnabled &&
-              !soundUnlocked && (
-                <p
-                  style={
-                    styles.soundNotice
-                  }
-                >
-                  Tap anywhere to
-                  enable new-order
-                  alerts.
-                </p>
-              )}
-
-            {orderLoadError && (
-              <section
-                style={
-                  styles.errorPanel
-                }
-              >
-                {
-                  orderLoadError
-                }
-              </section>
+            {soundEnabled && !soundUnlocked && (
+              <p style={styles.soundNotice}>
+                Tap anywhere to enable new-order alerts.
+              </p>
             )}
 
-            {actionError && (
-              <section
-                style={
-                  styles.errorPanel
-                }
-              >
-                <strong>
-                  ORDER ACTION
-                  ERROR
-                </strong>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                  }}
-                >
-                  {
-                    actionError
-                  }
-                </div>
+            {orderLoadError && (
+              <section style={styles.errorPanel}>
+                {orderLoadError}
               </section>
             )}
 
             {firstNewOrder ? (
-              <section
-                style={
-                  styles.newOrder
-                }
-              >
-                <div
-                  style={
-                    styles.newOrderHeading
-                  }
-                >
-                  <span
-                    style={
-                      styles.newOrderBell
-                    }
-                  >
+              <section style={styles.newOrder}>
+                <div style={styles.newOrderHeading}>
+                  <span style={styles.newOrderBell}>
                     🔔
                   </span>
 
                   <div>
-                    <div
-                      style={
-                        styles.newLabel
-                      }
-                    >
+                    <div style={styles.newLabel}>
                       NEW ORDER
                     </div>
 
-                    <div
-                      style={
-                        styles.newOrderSubheading
-                      }
-                    >
-                      An order is
-                      waiting for
-                      your response
+                    <div style={styles.newOrderSubheading}>
+                      An order is waiting for your response
                     </div>
                   </div>
 
-                  {newOrders.length >
-                    1 && (
-                    <span
-                      style={
-                        styles.newCount
-                      }
-                    >
-                      {
-                        newOrders.length
-                      }{" "}
-                      NEW
+                  {newOrders.length > 1 && (
+                    <span style={styles.newCount}>
+                      {newOrders.length} NEW
                     </span>
                   )}
                 </div>
 
-                <div
-                  style={
-                    styles.newOrderInner
-                  }
-                >
-                  <OrderDetails
-                    order={
-                      firstNewOrder
-                    }
-                  />
+                <div style={styles.newOrderInner}>
+                  <OrderDetails order={firstNewOrder} />
 
                   <div
                     className="mdh-order-actions"
-                    style={
-                      styles.actions
-                    }
+                    style={styles.actions}
                   >
                     <button
                       className="mdh-dashboard-button"
                       type="button"
-                      disabled={
-                        orderActionSaving
-                      }
-                      style={
-                        styles.acceptButton
-                      }
+                      disabled={orderActionSaving}
+                      style={styles.acceptButton}
                       onClick={() =>
                         handleOrderDecision(
                           firstNewOrder,
@@ -3821,11 +2520,9 @@ export default function RestaurantDashboard() {
                         )
                       }
                     >
-                      {pendingOrderAction
-                        ?.orderId ===
+                      {pendingOrderAction?.orderId ===
                         firstNewOrder.id &&
-                      pendingOrderAction
-                        ?.action ===
+                      pendingOrderAction?.action ===
                         "accept"
                         ? "ACCEPTING..."
                         : "✓ ACCEPT"}
@@ -3834,12 +2531,8 @@ export default function RestaurantDashboard() {
                     <button
                       className="mdh-dashboard-button"
                       type="button"
-                      disabled={
-                        orderActionSaving
-                      }
-                      style={
-                        styles.rejectButton
-                      }
+                      disabled={orderActionSaving}
+                      style={styles.rejectButton}
                       onClick={() =>
                         handleOrderDecision(
                           firstNewOrder,
@@ -3847,11 +2540,9 @@ export default function RestaurantDashboard() {
                         )
                       }
                     >
-                      {pendingOrderAction
-                        ?.orderId ===
+                      {pendingOrderAction?.orderId ===
                         firstNewOrder.id &&
-                      pendingOrderAction
-                        ?.action ===
+                      pendingOrderAction?.action ===
                         "reject"
                         ? "REJECTING..."
                         : "× REJECT"}
@@ -3860,107 +2551,40 @@ export default function RestaurantDashboard() {
                 </div>
               </section>
             ) : (
-              <section
-                style={
-                  styles.waiting
-                }
-              >
-                <div
-                  style={
-                    styles.tick
-                  }
-                >
-                  ✓
-                </div>
+              <section style={styles.waiting}>
+                <div style={styles.tick}>✓</div>
 
-                <h2
-                  style={
-                    styles.waitingTitle
-                  }
-                >
+                <h2 style={styles.waitingTitle}>
                   All Caught Up!
                 </h2>
 
-                <p
-                  style={
-                    styles.greyText
-                  }
-                >
-                  No new orders
-                  right now.
-                  Incoming orders
-                  will appear here
+                <p style={styles.greyText}>
+                  No new orders right now.
+                  Incoming orders will appear here
                   automatically.
                 </p>
-
-                {orderActionSaving && (
-                  <p
-                    style={{
-                      marginTop:
-                        14,
-
-                      fontWeight:
-                        800,
-
-                      color:
-                        "#555555",
-                    }}
-                  >
-                    Processing
-                    order...
-                  </p>
-                )}
               </section>
             )}
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.titleRow
-                }
-              >
-                <div
-                  style={
-                    styles.titleGroup
-                  }
-                >
-                  <h2
-                    style={
-                      styles.sectionTitle
-                    }
-                  >
-                    Previous
-                    Orders
+            <section style={styles.panel}>
+              <div style={styles.titleRow}>
+                <div style={styles.titleGroup}>
+                  <h2 style={styles.sectionTitle}>
+                    Previous Orders
                   </h2>
 
-                  <span
-                    style={
-                      styles.count
-                    }
-                  >
-                    {
-                      previousOrders.length
-                    }
+                  <span style={styles.count}>
+                    {previousOrders.length}
                   </span>
                 </div>
 
-                {previousOrders.length >
-                  5 && (
+                {previousOrders.length > 5 && (
                   <button
                     className="mdh-dashboard-button"
                     type="button"
-                    style={
-                      styles.viewAllButton
-                    }
+                    style={styles.viewAllButton}
                     onClick={() =>
-                      setShowAllOrders(
-                        (current) =>
-                          !current,
-                      )
+                      setShowAllOrders((current) => !current)
                     }
                   >
                     {showAllOrders
@@ -3970,580 +2594,301 @@ export default function RestaurantDashboard() {
                 )}
               </div>
 
-              {previousOrders.length ===
-              0 ? (
-                <p
-                  style={
-                    styles.emptyText
-                  }
-                >
-                  No previous
-                  orders yet.
+              {previousOrders.length === 0 ? (
+                <p style={styles.emptyText}>
+                  No previous orders yet.
                 </p>
               ) : (
-                visiblePreviousOrders.map(
-                  (order) => (
-                    <button
-                      className="mdh-order-row mdh-dashboard-button"
-                      type="button"
-                      key={
-                        order.id
-                      }
-                      style={
-                        styles.previousOrderButton
-                      }
-                      onClick={() =>
-                        setSelectedOrderId(
-                          order.id,
-                        )
-                      }
-                    >
-                      <div
-                        style={
-                          styles.previousOrderLeft
-                        }
-                      >
-                        <strong
-                          style={
-                            styles.previousOrderNumber
-                          }
-                        >
-                          {
-                            order.orderNumber
-                          }
-                        </strong>
+                visiblePreviousOrders.map((order) => (
+                  <button
+                    className="mdh-order-row mdh-dashboard-button"
+                    type="button"
+                    key={order.id}
+                    style={styles.previousOrderButton}
+                    onClick={() =>
+                      setSelectedOrderId(order.id)
+                    }
+                  >
+                    <div style={styles.previousOrderLeft}>
+                      <strong style={styles.previousOrderNumber}>
+                        {order.orderNumber}
+                      </strong>
 
-                        <div
-                          style={
-                            styles.greyText
-                          }
-                        >
-                          {
-                            order.dateTime
-                          }
-                        </div>
-
-                        <div
-                          style={
-                            styles.previousOrderType
-                          }
-                        >
-                          {order.orderType ===
-                          "pickup"
-                            ? "🛍 COLLECTION"
-                            : "🚗 DELIVERY"}
-                        </div>
+                      <div style={styles.greyText}>
+                        {order.dateTime}
                       </div>
 
-                      <div
-                        style={
-                          styles.previousOrderRight
-                        }
-                      >
-                        <strong
-                          style={
-                            styles.previousOrderAmount
-                          }
-                        >
-                          {money(
-                            order.total,
-                          )}
-                        </strong>
-
-                        <span
-                          style={
-                            order.status ===
-                            "accepted"
-                              ? styles.acceptedBadge
-                              : styles.rejectedBadge
-                          }
-                        >
-                          {String(
-                            order.status ||
-                              "",
-                          ).toUpperCase()}
-                        </span>
+                      <div style={styles.previousOrderType}>
+                        {order.orderType === "pickup"
+                          ? "🛍 COLLECTION"
+                          : "🚗 DELIVERY"}
                       </div>
+                    </div>
+
+                    <div style={styles.previousOrderRight}>
+                      <strong style={styles.previousOrderAmount}>
+                        {money(order.total)}
+                      </strong>
 
                       <span
                         style={
-                          styles.rowChevron
+                          order.status === "accepted"
+                            ? styles.acceptedBadge
+                            : styles.rejectedBadge
                         }
                       >
-                        ›
+                        {String(
+                          order.status || "",
+                        ).toUpperCase()}
                       </span>
-                    </button>
-                  ),
-                )
+                    </div>
+
+                    <span style={styles.rowChevron}>
+                      ›
+                    </span>
+                  </button>
+                ))
               )}
             </section>
           </>
         )}
 
-        {activeTab ===
-          "payments" && (
+        {activeTab === "payments" && (
           <>
-            <div
-              style={
-                styles.pageIntro
-              }
-            >
+            <div style={styles.pageIntro}>
               <div>
-                <h2
-                  style={
-                    styles.pageTitle
-                  }
-                >
+                <h2 style={styles.pageTitle}>
                   Payments
                 </h2>
 
-                <p
-                  style={
-                    styles.pageSubtitle
-                  }
-                >
-                  Track your
-                  earnings and
-                  payouts
+                <p style={styles.pageSubtitle}>
+                  Track your earnings and payouts
                 </p>
               </div>
             </div>
 
-            <section
-              style={
-                styles.weekSelector
-              }
-            >
+            <section style={styles.weekSelector}>
               <div>
-                <div
-                  style={
-                    styles.weekSelectorTitle
-                  }
-                >
+                <div style={styles.weekSelectorTitle}>
                   📅 THIS WEEK
                 </div>
 
-                <strong
-                  style={
-                    styles.weekSelectorDate
-                  }
-                >
-                  {
-                    paymentWeek.startLabel
-                  }
+                <strong style={styles.weekSelectorDate}>
+                  {paymentWeek.startLabel}
                   {" – "}
-                  {
-                    paymentWeek.endLabel
-                  }
+                  {paymentWeek.endLabel}
                 </strong>
               </div>
 
-              <span
-                style={
-                  styles.weekSelectorIcon
-                }
-              >
+              <span style={styles.weekSelectorIcon}>
                 ✓
               </span>
             </section>
 
             <div
               className="mdh-summary-grid"
-              style={
-                styles.grid
-              }
+              style={styles.grid}
             >
               <PaymentCard
                 icon="🍔"
                 title="MEAL DEAL SALES"
-                value={money(
-                  acceptedFoodSales,
-                )}
+                value={money(acceptedFoodSales)}
               />
 
               <PaymentCard
                 icon="🚗"
                 title="DELIVERY"
-                value={money(
-                  deliveryIncome,
-                )}
+                value={money(deliveryIncome)}
               />
 
               <PaymentCard
                 icon="↗"
                 title="COMMISSION"
-                value={money(
-                  commission,
-                )}
+                value={money(commission)}
                 subtitle="Meal Deal Hub commission"
               />
 
               <PaymentCard
                 icon="£"
                 title="YOU RECEIVE"
-                value={money(
-                  restaurantEarnings,
-                )}
+                value={money(restaurantEarnings)}
                 highlight
               />
             </div>
 
-            <div
-              style={
-                styles.secondaryGrid
-              }
-            >
-              <div
-                style={
-                  styles.paidCard
-                }
-              >
-                <div
-                  style={
-                    styles.secondaryCardLabel
-                  }
-                >
-                  ✓ PAID THIS
-                  MONTH
+            <div style={styles.secondaryGrid}>
+              <div style={styles.paidCard}>
+                <div style={styles.secondaryCardLabel}>
+                  ✓ PAID THIS MONTH
                 </div>
 
-                <div
-                  style={
-                    styles.secondaryCardValue
-                  }
-                >
-                  {money(
-                    paidThisMonth,
-                  )}
+                <div style={styles.secondaryCardValue}>
+                  {money(paidThisMonth)}
                 </div>
               </div>
 
-              <div
-                style={
-                  styles.nextPayoutCard
-                }
-              >
-                <div
-                  style={
-                    styles.secondaryCardLabel
-                  }
-                >
-                  ◷ ESTIMATED
-                  NEXT PAYOUT
+              <div style={styles.nextPayoutCard}>
+                <div style={styles.secondaryCardLabel}>
+                  ◷ ESTIMATED NEXT PAYOUT
                 </div>
 
-                <div
-                  style={
-                    styles.secondaryCardValue
-                  }
-                >
-                  {money(
-                    restaurantEarnings,
-                  )}
+                <div style={styles.secondaryCardValue}>
+                  {money(restaurantEarnings)}
                 </div>
 
-                <div
-                  style={
-                    styles.secondaryCardDate
-                  }
-                >
-                  Standard date:{" "}
-                  {
-                    paymentWeek.payoutLabel
-                  }
+                <div style={styles.secondaryCardDate}>
+                  Standard date: {paymentWeek.payoutLabel}
                 </div>
               </div>
             </div>
 
-            <section
-              style={
-                styles.paymentNote
-              }
-            >
+            <section style={styles.paymentNote}>
               <strong>
-                This week's
-                payment summary
+                This week's payment summary
               </strong>
 
-              <div
-                style={
-                  styles.paymentNoteRow
-                }
-              >
-                <span>
-                  Accepted paid
-                  orders
-                </span>
-
+              <div style={styles.paymentNoteRow}>
+                <span>Accepted paid orders</span>
                 <strong>
-                  {
-                    verifiedAcceptedOrderCount
-                  }
+                  {verifiedAcceptedOrderCount}
                 </strong>
               </div>
 
-              <div
-                style={
-                  styles.paymentNoteRow
-                }
-              >
-                <span>
-                  Commission
-                </span>
-
-                <strong>
-                  {money(
-                    commission,
-                  )}
-                </strong>
+              <div style={styles.paymentNoteRow}>
+                <span>Commission</span>
+                <strong>{money(commission)}</strong>
               </div>
 
-              <div
-                style={
-                  styles.paymentNoteRow
-                }
-              >
-                <span>
-                  Service fees
-                  retained by
-                  Meal Deal Hub
-                </span>
-
-                <strong>
-                  {money(
-                    serviceFees,
-                  )}
-                </strong>
+              <div style={styles.paymentNoteRow}>
+                <span>Service fees retained by Meal Deal Hub</span>
+                <strong>{money(serviceFees)}</strong>
               </div>
 
-              <p
-                style={
-                  styles.paymentDisclaimer
-                }
-              >
-                Payouts are
-                transferred
-                manually after
-                reconciliation.
-                Actual payment
-                dates may change
-                for bank
-                holidays.
+              <p style={styles.paymentDisclaimer}>
+                Payouts are transferred manually after
+                reconciliation. Actual payment dates may
+                change for bank holidays.
               </p>
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.titleRow
-                }
-              >
-                <h2
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <section style={styles.panel}>
+              <div style={styles.titleRow}>
+                <h2 style={styles.sectionTitle}>
                   Payout History
                 </h2>
               </div>
 
-              {payoutHistory.length ===
-              0 ? (
-                <p
-                  style={
-                    styles.emptyText
-                  }
-                >
-                  No payout
-                  records yet.
+              {payoutHistory.length === 0 ? (
+                <p style={styles.emptyText}>
+                  No payout records yet.
                 </p>
               ) : (
-                payoutHistory.map(
-                  (payout) => {
-                    const status =
-                      String(
-                        payout.status ||
-                          "",
-                      ).toLowerCase();
+                payoutHistory.map((payout) => {
+                  const status = String(
+                    payout.status || "",
+                  ).toLowerCase();
 
-                    const isPaid =
-                      status ===
-                        "paid" ||
-                      status ===
-                        "completed";
+                  const isPaid =
+                    status === "paid" ||
+                    status === "completed";
 
-                    return (
-                      <div
-                        key={
-                          payout.id
-                        }
-                        style={
-                          styles.historyRow
-                        }
-                      >
-                        <div
-                          style={{
-                            minWidth:
-                              0,
-                          }}
-                        >
-                          <strong
-                            style={
-                              styles.historyDates
-                            }
-                          >
-                            {formatPayoutDate(
-                              payout.weekStart,
-                            )}
-                            {" – "}
-                            {formatPayoutDate(
-                              payout.weekEnd,
-                            )}
-                          </strong>
+                  return (
+                    <div
+                      key={payout.id}
+                      style={styles.historyRow}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={styles.historyDates}>
+                          {formatPayoutDate(
+                            payout.weekStart,
+                          )}
+                          {" – "}
+                          {formatPayoutDate(
+                            payout.weekEnd,
+                          )}
+                        </strong>
 
-                          <div
-                            style={
-                              styles.greyText
-                            }
-                          >
-                            {isPaid
-                              ? "Recorded payout date: "
-                              : "Expected: "}
-                            {formatPayoutDate(
-                              payout.payoutDate,
-                            )}
-                          </div>
-
-                          <div
-                            style={
-                              styles.historyCount
-                            }
-                          >
-                            {
-                              payout.acceptedOrderCount
-                            }{" "}
-                            accepted
-                            orders
-                          </div>
+                        <div style={styles.greyText}>
+                          {isPaid
+                            ? "Recorded payout date: "
+                            : "Expected: "}
+                          {formatPayoutDate(
+                            payout.payoutDate,
+                          )}
                         </div>
 
-                        <div
-                          style={
-                            styles.historyRight
-                          }
-                        >
-                          <strong
-                            style={
-                              styles.historyAmount
-                            }
-                          >
-                            {money(
-                              payout.restaurantEarnings,
-                            )}
-                          </strong>
-
-                          <span
-                            style={
-                              isPaid
-                                ? styles.acceptedBadge
-                                : styles.expectedBadge
-                            }
-                          >
-                            {isPaid
-                              ? "PAID"
-                              : status.toUpperCase() ||
-                                "EXPECTED"}
-                          </span>
+                        <div style={styles.historyCount}>
+                          {payout.acceptedOrderCount}{" "}
+                          accepted orders
                         </div>
                       </div>
-                    );
-                  },
-                )
+
+                      <div style={styles.historyRight}>
+                        <strong style={styles.historyAmount}>
+                          {money(
+                            payout.restaurantEarnings,
+                          )}
+                        </strong>
+
+                        <span
+                          style={
+                            isPaid
+                              ? styles.acceptedBadge
+                              : styles.expectedBadge
+                          }
+                        >
+                          {isPaid
+                            ? "PAID"
+                            : status.toUpperCase() ||
+                              "EXPECTED"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </section>
           </>
         )}
 
-        {activeTab ===
-          "account" && (
+        {activeTab === "account" && (
           <>
-            <div
-              style={
-                styles.pageIntro
-              }
-            >
+            <div style={styles.pageIntro}>
               <div>
-                <h2
-                  style={
-                    styles.pageTitle
-                  }
-                >
+                <h2 style={styles.pageTitle}>
                   My Account
                 </h2>
 
-                <p
-                  style={
-                    styles.pageSubtitle
-                  }
-                >
-                  Restaurant
-                  details and
-                  settings
+                <p style={styles.pageSubtitle}>
+                  Restaurant details and settings
                 </p>
               </div>
             </div>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.accountSectionHeading
-                }
-              >
-                <span
-                  style={
-                    styles.accountSectionIcon
-                  }
-                >
+            <section style={styles.panel}>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
                   ▣
                 </span>
 
-                <h2
-                  style={
-                    styles.sectionTitle
-                  }
-                >
-                  Restaurant
-                  Information
+                <h2 style={styles.sectionTitle}>
+                  Restaurant Information
                 </h2>
               </div>
 
               <AccountRow
                 label="Restaurant Name"
-                value={
-                  restaurant.name
-                }
+                value={restaurant.name}
               />
 
               <AccountRow
                 label="Restaurant ID"
-                value={
-                  restaurant.restaurantId
-                }
+                value={restaurant.restaurantId}
               />
 
               <AccountRow
                 label="Email Address"
-                value={
-                  user.email
-                }
+                value={user.email}
               />
 
               <AccountRow
@@ -4561,62 +2906,29 @@ export default function RestaurantDashboard() {
               />
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.accountSectionHeading
-                }
-              >
-                <span
-                  style={
-                    styles.accountSectionIcon
-                  }
-                >
+            <section style={styles.panel}>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
                   ⚙
                 </span>
 
-                <h2
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+                <h2 style={styles.sectionTitle}>
                   Order Settings
                 </h2>
               </div>
 
-              <div
-                style={
-                  styles.settingRow
-                }
-              >
+              <div style={styles.settingRow}>
                 <div>
-                  <strong
-                    style={
-                      styles.settingTitle
-                    }
-                  >
-                    Accept New
-                    Orders
+                  <strong style={styles.settingTitle}>
+                    Accept New Orders
                   </strong>
 
-                  <p
-                    style={
-                      styles.settingDescription
-                    }
-                  >
-                    Temporarily
-                    pause or
-                    resume orders.
+                  <p style={styles.settingDescription}>
+                    Temporarily pause or resume orders.
                   </p>
                 </div>
 
-                <Form
-                  method="post"
-                >
+                <Form method="post">
                   <input
                     type="hidden"
                     name="intent"
@@ -4630,9 +2942,7 @@ export default function RestaurantDashboard() {
                   <button
                     className="mdh-dashboard-button"
                     type="submit"
-                    disabled={
-                      isSaving
-                    }
+                    disabled={isSaving}
                     style={
                       restaurant.acceptingOrders
                         ? styles.pauseSmallButton
@@ -4648,29 +2958,14 @@ export default function RestaurantDashboard() {
                 </Form>
               </div>
 
-              <div
-                style={
-                  styles.settingRow
-                }
-              >
+              <div style={styles.settingRow}>
                 <div>
-                  <strong
-                    style={
-                      styles.settingTitle
-                    }
-                  >
-                    Sound
-                    Notifications
+                  <strong style={styles.settingTitle}>
+                    Sound Notifications
                   </strong>
 
-                  <p
-                    style={
-                      styles.settingDescription
-                    }
-                  >
-                    Play an alert
-                    for incoming
-                    orders.
+                  <p style={styles.settingDescription}>
+                    Play an alert for incoming orders.
                   </p>
                 </div>
 
@@ -4678,9 +2973,7 @@ export default function RestaurantDashboard() {
                   className="mdh-dashboard-button"
                   type="button"
                   role="switch"
-                  aria-checked={
-                    soundEnabled
-                  }
+                  aria-checked={soundEnabled}
                   aria-label="Sound notifications"
                   onClick={
                     soundEnabled
@@ -4689,70 +2982,42 @@ export default function RestaurantDashboard() {
                   }
                   style={{
                     ...styles.toggleTrack,
-
-                    background:
-                      soundEnabled
-                        ? "#FFD400"
-                        : "#D1D5DB",
+                    background: soundEnabled
+                      ? "#FFD400"
+                      : "#D1D5DB",
                   }}
                 >
                   <span
                     style={{
                       ...styles.toggleKnob,
-
-                      transform:
-                        soundEnabled
-                          ? "translateX(23px)"
-                          : "translateX(0)",
+                      transform: soundEnabled
+                        ? "translateX(23px)"
+                        : "translateX(0)",
                     }}
                   />
                 </button>
               </div>
             </section>
 
-            <section
-              style={
-                styles.panel
-              }
-            >
-              <div
-                style={
-                  styles.accountSectionHeading
-                }
-              >
-                <span
-                  style={
-                    styles.accountSectionIcon
-                  }
-                >
+            <section style={styles.panel}>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
                   ↪
                 </span>
 
-                <h2
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+                <h2 style={styles.sectionTitle}>
                   Sign Out
                 </h2>
               </div>
 
-              <p
-                style={
-                  styles.settingDescription
-                }
-              >
-                Sign out
-                securely from
-                your restaurant
+              <p style={styles.settingDescription}>
+                Sign out securely from your restaurant
                 dashboard.
               </p>
 
               <a
                 href="/restaurant/logout"
-                style={
-                  styles.logoutButton
-                }
+                style={styles.logoutButton}
               >
                 ↪ LOG OUT
               </a>
@@ -4763,48 +3028,24 @@ export default function RestaurantDashboard() {
 
       <nav
         className="mdh-bottom-nav"
-        style={
-          styles.bottomNav
-        }
+        style={styles.bottomNav}
         aria-label="Restaurant dashboard navigation"
       >
         <button
           className="mdh-dashboard-button"
           type="button"
-          onClick={() =>
-            setActiveTab(
-              "orders",
-            )
-          }
+          onClick={() => setActiveTab("orders")}
           style={
-            activeTab ===
-            "orders"
+            activeTab === "orders"
               ? styles.activeNav
               : styles.navButton
           }
         >
-          <span
-            style={
-              styles.navIcon
-            }
-          >
-            ▤
-          </span>
-
-          <span>
-            ORDERS
-          </span>
-
-          {newOrders.length >
-            0 && (
-            <span
-              style={
-                styles.navCount
-              }
-            >
-              {
-                newOrders.length
-              }
+          <span style={styles.navIcon}>▤</span>
+          <span>ORDERS</span>
+          {newOrders.length > 0 && (
+            <span style={styles.navCount}>
+              {newOrders.length}
             </span>
           )}
         </button>
@@ -4812,122 +3053,70 @@ export default function RestaurantDashboard() {
         <button
           className="mdh-dashboard-button"
           type="button"
-          onClick={() =>
-            setActiveTab(
-              "payments",
-            )
-          }
+          onClick={() => setActiveTab("payments")}
           style={
-            activeTab ===
-            "payments"
+            activeTab === "payments"
               ? styles.activeNav
               : styles.navButton
           }
         >
-          <span
-            style={
-              styles.navIcon
-            }
-          >
-            £
-          </span>
-
-          <span>
-            PAYMENTS
-          </span>
+          <span style={styles.navIcon}>£</span>
+          <span>PAYMENTS</span>
         </button>
 
         <button
           className="mdh-dashboard-button"
           type="button"
-          onClick={() =>
-            setActiveTab(
-              "account",
-            )
-          }
+          onClick={() => setActiveTab("account")}
           style={
-            activeTab ===
-            "account"
+            activeTab === "account"
               ? styles.activeNav
               : styles.navButton
           }
         >
-          <span
-            style={
-              styles.navIcon
-            }
-          >
-            ⚙
-          </span>
-
-          <span>
-            ACCOUNT
-          </span>
+          <span style={styles.navIcon}>⚙</span>
+          <span>ACCOUNT</span>
         </button>
       </nav>
 
       {selectedOrder && (
         <div
-          style={
-            styles.modalOverlay
-          }
-          onClick={() =>
-            setSelectedOrderId(
-              null,
-            )
-          }
+          style={styles.modalOverlay}
+          onClick={() => setSelectedOrderId(null)}
         >
           <div
-            style={
-              styles.orderModal
-            }
-            onClick={(
-              event,
-            ) =>
+            style={styles.orderModal}
+            onClick={(event) =>
               event.stopPropagation()
             }
           >
             <button
               className="mdh-dashboard-button"
               type="button"
-              style={
-                styles.closeButton
-              }
+              style={styles.closeButton}
               onClick={() =>
-                setSelectedOrderId(
-                  null,
-                )
+                setSelectedOrderId(null)
               }
               aria-label="Close order details"
             >
               ×
             </button>
 
-            <div
-              style={
-                styles.modalHeading
-              }
-            >
+            <div style={styles.modalHeading}>
               ORDER DETAILS
             </div>
 
             <OrderDetails
-              order={
-                selectedOrder
-              }
+              order={selectedOrder}
               showStatus
             />
 
             <button
               className="mdh-dashboard-button"
               type="button"
-              style={
-                styles.modalDoneButton
-              }
+              style={styles.modalDoneButton}
               onClick={() =>
-                setSelectedOrderId(
-                  null,
-                )
+                setSelectedOrderId(null)
               }
             >
               CLOSE
@@ -4960,16 +3149,11 @@ function PaymentCard({
           : styles.paymentCard
       }
     >
-      <div
-        style={
-          styles.paymentIcon
-        }
-      >
+      <div style={styles.paymentIcon}>
         {icon}
       </div>
 
       <div
-        className="mdh-payment-value"
         style={
           highlight
             ? styles.highlightCardTitle
@@ -4991,11 +3175,7 @@ function PaymentCard({
       </div>
 
       {subtitle && (
-        <div
-          style={
-            styles.paymentCardSubtitle
-          }
-        >
+        <div style={styles.paymentCardSubtitle}>
           {subtitle}
         </div>
       )}
@@ -5009,28 +3189,18 @@ function AccountRow({
   status,
 }) {
   return (
-    <div
-      style={
-        styles.accountRow
-      }
-    >
-      <span
-        style={
-          styles.accountLabel
-        }
-      >
+    <div style={styles.accountRow}>
+      <span style={styles.accountLabel}>
         {label}
       </span>
 
       <strong
         style={{
           ...styles.accountValue,
-
           color:
             status === "open"
               ? "#15803D"
-              : status ===
-                  "paused"
+              : status === "paused"
                 ? "#B42318"
                 : "#111111",
         }}
@@ -5061,8 +3231,7 @@ const styles = {
   header: {
     background: "#111111",
     color: "#FFFFFF",
-    borderBottom:
-      "4px solid #FFD400",
+    borderBottom: "4px solid #FFD400",
   },
 
   headerInner: {
@@ -5070,8 +3239,7 @@ const styles = {
     margin: "0 auto",
     padding: "19px 24px",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   },
@@ -5108,8 +3276,7 @@ const styles = {
   openBadge: {
     background: "#193B29",
     color: "#73E6A0",
-    border:
-      "1px solid #35684B",
+    border: "1px solid #35684B",
     borderRadius: 30,
     padding: "9px 12px",
     fontSize: 11,
@@ -5121,8 +3288,7 @@ const styles = {
   pausedBadge: {
     background: "#442020",
     color: "#FFB4B4",
-    border:
-      "1px solid #7A3C3C",
+    border: "1px solid #7A3C3C",
     borderRadius: 30,
     padding: "9px 12px",
     fontSize: 11,
@@ -5134,15 +3300,13 @@ const styles = {
   container: {
     maxWidth: 950,
     margin: "0 auto",
-    padding:
-      "26px 22px 120px",
+    padding: "26px 22px 120px",
   },
 
   pageIntro: {
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 12,
     marginBottom: 22,
   },
@@ -5184,18 +3348,15 @@ const styles = {
     padding: "13px 14px",
     background: "#FFFFFF",
     color: "#151515",
-    border:
-      "1px solid #E5E7EB",
+    border: "1px solid #E5E7EB",
     borderRadius: 13,
     fontWeight: 900,
     fontSize: 12,
     cursor: "pointer",
-    boxShadow:
-      "0 3px 10px rgba(0,0,0,0.03)",
+    boxShadow: "0 3px 10px rgba(0,0,0,0.03)",
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     gap: 9,
   },
 
@@ -5212,8 +3373,7 @@ const styles = {
   errorPanel: {
     background: "#FFF0F0",
     color: "#B42318",
-    border:
-      "1px solid #F5B9B4",
+    border: "1px solid #F5B9B4",
     borderRadius: 12,
     padding: 16,
     marginBottom: 18,
@@ -5225,16 +3385,14 @@ const styles = {
     borderRadius: 18,
     padding: 14,
     marginBottom: 24,
-    boxShadow:
-      "0 8px 24px rgba(0,0,0,0.06)",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
   },
 
   newOrderHeading: {
     display: "flex",
     alignItems: "center",
     gap: 11,
-    padding:
-      "5px 6px 16px",
+    padding: "5px 6px 16px",
   },
 
   newOrderBell: {
@@ -5282,10 +3440,8 @@ const styles = {
 
   detailTop: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "flex-start",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 12,
     flexWrap: "wrap",
   },
@@ -5335,8 +3491,7 @@ const styles = {
   customerDetails: {
     marginTop: 20,
     paddingTop: 16,
-    borderTop:
-      "1px solid #EEEEEE",
+    borderTop: "1px solid #EEEEEE",
   },
 
   sectionLabel: {
@@ -5349,10 +3504,8 @@ const styles = {
 
   infoLine: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "flex-start",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 15,
     padding: "7px 0",
     fontSize: 13,
@@ -5361,8 +3514,7 @@ const styles = {
 
   items: {
     background: "#F8F9FA",
-    border:
-      "1px solid #ECEDEF",
+    border: "1px solid #ECEDEF",
     borderRadius: 12,
     padding: 15,
     marginTop: 18,
@@ -5370,8 +3522,7 @@ const styles = {
 
   item: {
     display: "flex",
-    alignItems:
-      "flex-start",
+    alignItems: "flex-start",
     gap: 11,
     padding: "8px 0",
     fontSize: 14,
@@ -5394,15 +3545,13 @@ const styles = {
 
   orderBreakdown: {
     marginTop: 18,
-    borderTop:
-      "1px solid #EEEEEE",
+    borderTop: "1px solid #EEEEEE",
     paddingTop: 11,
   },
 
   breakdownRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 16,
     padding: "7px 0",
     fontSize: 13,
@@ -5411,21 +3560,18 @@ const styles = {
 
   breakdownTotal: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 15,
     padding: "14px 0 0",
     marginTop: 9,
-    borderTop:
-      "2px solid #111111",
+    borderTop: "2px solid #111111",
     fontSize: 15,
     fontWeight: 900,
   },
 
   actions: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 10,
     marginTop: 22,
   },
@@ -5435,8 +3581,7 @@ const styles = {
     minHeight: 53,
     background: "#111111",
     color: "#FFFFFF",
-    border:
-      "2px solid #111111",
+    border: "2px solid #111111",
     borderRadius: 10,
     fontSize: 14,
     fontWeight: 900,
@@ -5448,8 +3593,7 @@ const styles = {
     minHeight: 53,
     background: "#FFD400",
     color: "#111111",
-    border:
-      "2px solid #FFD400",
+    border: "2px solid #FFD400",
     borderRadius: 10,
     fontSize: 14,
     fontWeight: 900,
@@ -5462,8 +3606,7 @@ const styles = {
     padding: "42px 24px",
     textAlign: "center",
     marginBottom: 24,
-    border:
-      "1px solid #ECEDEF",
+    border: "1px solid #ECEDEF",
   },
 
   tick: {
@@ -5474,8 +3617,7 @@ const styles = {
     color: "#111111",
     display: "grid",
     placeItems: "center",
-    margin:
-      "0 auto 17px",
+    margin: "0 auto 17px",
     fontSize: 28,
     fontWeight: 900,
   },
@@ -5489,17 +3631,14 @@ const styles = {
     background: "#FFFFFF",
     borderRadius: 16,
     padding: 20,
-    border:
-      "1px solid #E9EAEC",
+    border: "1px solid #E9EAEC",
     marginBottom: 20,
-    boxShadow:
-      "0 3px 14px rgba(0,0,0,0.025)",
+    boxShadow: "0 3px 14px rgba(0,0,0,0.025)",
   },
 
   titleRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
     marginBottom: 12,
@@ -5532,8 +3671,7 @@ const styles = {
   },
 
   viewAllButton: {
-    background:
-      "transparent",
+    background: "transparent",
     border: 0,
     color: "#111111",
     fontSize: 12,
@@ -5552,12 +3690,10 @@ const styles = {
     width: "100%",
     background: "#FFFFFF",
     border: 0,
-    borderTop:
-      "1px solid #F0F0F0",
+    borderTop: "1px solid #F0F0F0",
     padding: "17px 0",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 10,
     cursor: "pointer",
@@ -5586,10 +3722,8 @@ const styles = {
 
   previousOrderRight: {
     display: "flex",
-    flexDirection:
-      "column",
-    alignItems:
-      "flex-end",
+    flexDirection: "column",
+    alignItems: "flex-end",
     gap: 8,
     flexShrink: 0,
   },
@@ -5640,14 +3774,12 @@ const styles = {
 
   weekSelector: {
     background: "#FFFFFF",
-    border:
-      "1px solid #E9EAEC",
+    border: "1px solid #E9EAEC",
     borderRadius: 14,
     padding: "17px 18px",
     marginBottom: 18,
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   },
@@ -5671,8 +3803,7 @@ const styles = {
 
   grid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 13,
     marginBottom: 15,
   },
@@ -5684,10 +3815,8 @@ const styles = {
     padding: 19,
     minHeight: 145,
     display: "flex",
-    flexDirection:
-      "column",
-    alignItems:
-      "flex-start",
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
 
   highlightPaymentCard: {
@@ -5697,10 +3826,8 @@ const styles = {
     padding: 19,
     minHeight: 145,
     display: "flex",
-    flexDirection:
-      "column",
-    alignItems:
-      "flex-start",
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
 
   paymentIcon: {
@@ -5751,24 +3878,21 @@ const styles = {
 
   secondaryGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 13,
     marginBottom: 18,
   },
 
   paidCard: {
     background: "#FFF5CB",
-    border:
-      "1px solid #F8E8A0",
+    border: "1px solid #F8E8A0",
     borderRadius: 14,
     padding: 18,
   },
 
   nextPayoutCard: {
     background: "#ECEEF1",
-    border:
-      "1px solid #E4E6E9",
+    border: "1px solid #E4E6E9",
     borderRadius: 14,
     padding: 18,
   },
@@ -5797,8 +3921,7 @@ const styles = {
 
   paymentNote: {
     background: "#FFFFFF",
-    border:
-      "1px solid #E9EAEC",
+    border: "1px solid #E9EAEC",
     borderRadius: 14,
     padding: 19,
     marginBottom: 20,
@@ -5807,8 +3930,7 @@ const styles = {
 
   paymentNoteRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 15,
     paddingTop: 14,
     color: "#555555",
@@ -5820,27 +3942,22 @@ const styles = {
     lineHeight: 1.7,
     margin: "16px 0 0",
     paddingTop: 13,
-    borderTop:
-      "1px solid #EEEEEE",
+    borderTop: "1px solid #EEEEEE",
   },
 
   historyRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
     padding: "17px 0",
-    borderTop:
-      "1px solid #EEEEEE",
+    borderTop: "1px solid #EEEEEE",
   },
 
   historyRight: {
     display: "flex",
-    flexDirection:
-      "column",
-    alignItems:
-      "flex-end",
+    flexDirection: "column",
+    alignItems: "flex-end",
     gap: 7,
     flexShrink: 0,
   },
@@ -5883,13 +4000,10 @@ const styles = {
 
   accountRow: {
     padding: "15px 0",
-    borderBottom:
-      "1px solid #EEEEEE",
+    borderBottom: "1px solid #EEEEEE",
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "flex-start",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 15,
   },
 
@@ -5908,13 +4022,11 @@ const styles = {
 
   settingRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
     padding: "17px 0",
-    borderTop:
-      "1px solid #EEEEEE",
+    borderTop: "1px solid #EEEEEE",
   },
 
   settingTitle: {
@@ -5970,10 +4082,8 @@ const styles = {
     height: 22,
     background: "#FFFFFF",
     borderRadius: "50%",
-    boxShadow:
-      "0 1px 4px rgba(0,0,0,0.2)",
-    transition:
-      "transform 0.2s",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+    transition: "transform 0.2s",
   },
 
   logoutButton: {
@@ -5981,8 +4091,7 @@ const styles = {
     background: "#FFFFFF",
     color: "#C22C2C",
     textDecoration: "none",
-    border:
-      "1px solid #F0B5B5",
+    border: "1px solid #F0B5B5",
     borderRadius: 10,
     padding: "13px 20px",
     fontSize: 12,
@@ -5993,20 +4102,15 @@ const styles = {
   bottomNav: {
     position: "fixed",
     left: "50%",
-    transform:
-      "translateX(-50%)",
+    transform: "translateX(-50%)",
     bottom: 0,
-    width:
-      "min(100%, 950px)",
+    width: "min(100%, 950px)",
     background: "#111111",
-    borderTop:
-      "3px solid #FFD400",
+    borderTop: "3px solid #FFD400",
     display: "grid",
-    gridTemplateColumns:
-      "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     zIndex: 50,
-    boxShadow:
-      "0 -4px 25px rgba(0,0,0,0.12)",
+    boxShadow: "0 -4px 25px rgba(0,0,0,0.12)",
   },
 
   activeNav: {
@@ -6014,8 +4118,7 @@ const styles = {
     background: "#111111",
     color: "#FFD400",
     border: 0,
-    borderTop:
-      "3px solid #FFD400",
+    borderTop: "3px solid #FFD400",
     marginTop: -3,
     minHeight: 76,
     padding: "11px 5px",
@@ -6024,11 +4127,9 @@ const styles = {
     letterSpacing: 0.4,
     cursor: "pointer",
     display: "flex",
-    flexDirection:
-      "column",
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     gap: 5,
   },
 
@@ -6044,11 +4145,9 @@ const styles = {
     letterSpacing: 0.4,
     cursor: "pointer",
     display: "flex",
-    flexDirection:
-      "column",
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     gap: 5,
   },
 
@@ -6075,13 +4174,11 @@ const styles = {
   modalOverlay: {
     position: "fixed",
     inset: 0,
-    background:
-      "rgba(0,0,0,0.7)",
+    background: "rgba(0,0,0,0.7)",
     zIndex: 1000,
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     padding: 14,
     overflowY: "auto",
   },
@@ -6095,10 +4192,8 @@ const styles = {
     background: "#FFFFFF",
     borderRadius: 18,
     padding: 23,
-    boxShadow:
-      "0 20px 60px rgba(0,0,0,0.3)",
-    borderTop:
-      "5px solid #FFD400",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+    borderTop: "5px solid #FFD400",
   },
 
   closeButton: {
