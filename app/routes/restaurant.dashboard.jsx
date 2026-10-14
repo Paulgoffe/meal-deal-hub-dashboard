@@ -111,7 +111,7 @@ async function getAuthenticatedUser(request) {
     !user ||
     !user.active ||
     !user.Restaurant ||
-    !user.restaurant.active
+    !user.Restaurant.active
   ) {
     return null;
   }
@@ -842,8 +842,8 @@ export async function loader({ request }) {
 
   try {
     orders = await getShopifyOrders(
-      user.restaurant.restaurantId,
-      user.restaurant.name,
+      user.Restaurant.restaurantId,
+      user.Restaurant.name,
     );
   } catch (error) {
     console.error(
@@ -857,7 +857,7 @@ export async function loader({ request }) {
 
   const decisions = await db.orderDecision.findMany({
     where: {
-      restaurantId: user.restaurant.id,
+      restaurantId: user.Restaurant.id,
     },
     orderBy: {
       decidedAt: "desc",
@@ -978,7 +978,7 @@ export async function loader({ request }) {
 
   const payoutHistory = await db.restaurantPayout.findMany({
     where: {
-      restaurantId: user.restaurant.id,
+      restaurantId: user.Restaurant.id,
     },
     orderBy: {
       weekStart: "desc",
@@ -1038,10 +1038,10 @@ export async function loader({ request }) {
     },
 
     restaurant: {
-      id: user.restaurant.id,
-      restaurantId: user.restaurant.restaurantId,
-      name: user.restaurant.name,
-      acceptingOrders: user.restaurant.acceptingOrders,
+      id: user.Restaurant.id,
+      restaurantId: user.Restaurant.restaurantId,
+      name: user.Restaurant.name,
+      acceptingOrders: user.Restaurant.acceptingOrders,
     },
 
     orders: ordersWithDecisions,
@@ -1093,7 +1093,7 @@ export async function action({ request }) {
   ) {
     await db.restaurant.update({
       where: {
-        id: user.restaurant.id,
+        id: user.Restaurant.id,
       },
       data: {
         acceptingOrders: intent === "resume-orders",
@@ -1150,7 +1150,7 @@ export async function action({ request }) {
       where: {
         shopifyOrderId_restaurantId: {
           shopifyOrderId,
-          restaurantId: user.restaurant.id,
+          restaurantId: user.Restaurant.id,
         },
       },
     });
@@ -1202,8 +1202,8 @@ export async function action({ request }) {
     */
 
     const restaurantOrders = await getShopifyOrders(
-      user.restaurant.restaurantId,
-      user.restaurant.name,
+      user.Restaurant.restaurantId,
+      user.Restaurant.name,
     );
 
     const restaurantOrder = restaurantOrders.find(
@@ -1407,7 +1407,7 @@ export async function action({ request }) {
         where: {
           shopifyOrderId_restaurantId: {
             shopifyOrderId,
-            restaurantId: user.restaurant.id,
+            restaurantId: user.Restaurant.id,
           },
         },
 
@@ -1419,7 +1419,7 @@ export async function action({ request }) {
         create: {
           shopifyOrderId,
           orderNumber,
-          restaurantId: user.restaurant.id,
+          restaurantId: user.Restaurant.id,
           status: "rejected",
         },
       });
@@ -1614,7 +1614,7 @@ export async function action({ request }) {
       where: {
         shopifyOrderId_restaurantId: {
           shopifyOrderId,
-          restaurantId: user.restaurant.id,
+          restaurantId: user.Restaurant.id,
         },
       },
 
@@ -1622,7 +1622,7 @@ export async function action({ request }) {
 
       create: {
         shopifyOrderId,
-        restaurantId: user.restaurant.id,
+        restaurantId: user.Restaurant.id,
         ...snapshot,
       },
     });
@@ -1630,7 +1630,7 @@ export async function action({ request }) {
     console.log("RESTAURANT PAYMENT SAVED:", {
       shopifyOrderId,
       orderNumber,
-      restaurantId: user.restaurant.id,
+      restaurantId: user.Restaurant.id,
       foodSales,
       deliveryIncome,
       serviceFee,
