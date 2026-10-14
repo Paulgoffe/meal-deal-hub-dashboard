@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 RUN apk add --no-cache openssl
 
@@ -11,20 +11,20 @@ ENV NODE_ENV=production
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install all dependencies needed to build the application
+# Install dependencies
 RUN npm ci
 
-# Copy the application and Prisma schema
+# Copy application files
 COPY . .
 
-# Generate Prisma Client from the latest schema
+# Generate Prisma Client
 RUN npx prisma generate
 
 # Build Meal Deal Hub
 RUN npm run build
 
-# Remove development dependencies after building
+# Remove development dependencies
 RUN npm prune --omit=dev
 
-# Start the application
+# Start application
 CMD ["npm", "run", "docker-start"]
