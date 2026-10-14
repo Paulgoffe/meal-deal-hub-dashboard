@@ -1611,16 +1611,16 @@ export async function action({ request }) {
     */
 
     const snapshot = {
-      status: "accepted",
-      orderNumber,
-      foodSales: foodSales.toFixed(2),
-      deliveryIncome: deliveryIncome.toFixed(2),
-      serviceFee: serviceFee.toFixed(2),
-      paymentCaptured: true,
-      capturedAt,
-      currencyCode,
-      updatedAt: new Date(),
-    };
+  status: "accepted",
+  orderNumber,
+  foodSales: foodSales.toFixed(2),
+  deliveryIncome: deliveryIncome.toFixed(2),
+  serviceFee: serviceFee.toFixed(2),
+  paymentCaptured: true,
+  capturedAt,
+  currencyCode,
+  updatedAt: new Date(),
+};
 
     await db.orderDecision.upsert({
       where: {
