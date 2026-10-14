@@ -49,16 +49,16 @@ export const action = async ({ request }) => {
   }
 
   const user = await db.restaurantUser.findUnique({
-    where: { email },
-    include: {
-      restaurant: true,
-    },
-  });
+  where: { email },
+  include: {
+    Restaurant: true,
+  },
+});
 
   if (
     !user ||
     !user.active ||
-    !user.restaurant.active
+    !user.Restaurant?.active
   ) {
     return {
       error: "Email or password is incorrect.",
