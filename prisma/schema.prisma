@@ -34,9 +34,23 @@ model OrderDecision {
   orderNumber    String
   restaurantId   Int
   status         String
+
   decidedAt      DateTime   @default(now())
-  updatedAt      DateTime
-  Restaurant     Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  updatedAt      DateTime   @updatedAt
+
+  foodSales      Decimal?   @db.Decimal(12, 2)
+  deliveryIncome Decimal?   @db.Decimal(12, 2)
+  serviceFee     Decimal?   @db.Decimal(12, 2)
+
+  paymentCaptured Boolean   @default(false)
+  capturedAt      DateTime?
+  currencyCode    String?
+
+  Restaurant Restaurant @relation(
+    fields: [restaurantId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   @@unique([shopifyOrderId, restaurantId])
   @@index([restaurantId])
