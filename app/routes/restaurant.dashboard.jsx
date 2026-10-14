@@ -1665,25 +1665,20 @@ function OrderTypeBadge({ orderType }) {
   const pickup = orderType === "pickup";
 
   return (
-    <div
+    <span
       style={
         pickup
           ? styles.pickupBadge
           : styles.deliveryBadge
       }
     >
-      {pickup ? "🛍 PICKUP" : "🚗 DELIVERY"}
-    </div>
+      {pickup ? "🛍 COLLECTION" : "🚗 DELIVERY"}
+    </span>
   );
 }
 
-function OrderDetails({
-  order,
-  showStatus = false,
-}) {
-  if (!order) {
-    return null;
-  }
+function OrderDetails({ order, showStatus = false }) {
+  if (!order) return null;
 
   return (
     <>
@@ -1714,57 +1709,65 @@ function OrderDetails({
                 : styles.rejectedBadge
             }
           >
-            {String(
-              order.status || "",
-            ).toUpperCase()}
+            {String(order.status || "").toUpperCase()}
           </span>
         </div>
       )}
 
       <div style={styles.customerDetails}>
-        <div>
-          <strong>Customer:</strong>{" "}
-          {order.customer || "Customer"}
+        <div style={styles.sectionLabel}>
+          CUSTOMER DETAILS
+        </div>
+
+        <div style={styles.infoLine}>
+          <span>Customer</span>
+          <strong>{order.customer || "Customer"}</strong>
         </div>
 
         {order.customerPhone && (
-          <div>
-            <strong>Phone:</strong>{" "}
-            {order.customerPhone}
+          <div style={styles.infoLine}>
+            <span>Phone</span>
+            <strong>{order.customerPhone}</strong>
           </div>
         )}
 
         {order.customerEmail && (
-          <div>
-            <strong>Email:</strong>{" "}
-            {order.customerEmail}
+          <div style={styles.infoLine}>
+            <span>Email</span>
+            <strong style={{ overflowWrap: "anywhere" }}>
+              {order.customerEmail}
+            </strong>
           </div>
         )}
 
         {order.orderType === "delivery" &&
           order.customerAddress && (
-            <div>
-              <strong>Delivery address:</strong>{" "}
-              {order.customerAddress}
+            <div style={styles.infoLine}>
+              <span>Delivery address</span>
+              <strong>{order.customerAddress}</strong>
             </div>
           )}
 
         {order.orderType === "pickup" &&
           order.pickupLocation && (
-            <div>
-              <strong>Pickup location:</strong>{" "}
-              {order.pickupLocation}
+            <div style={styles.infoLine}>
+              <span>Collection location</span>
+              <strong>{order.pickupLocation}</strong>
             </div>
           )}
       </div>
 
       <div style={styles.items}>
+        <div style={styles.sectionLabel}>
+          ORDER ITEMS
+        </div>
+
         {(order.items || []).map((item, index) => (
           <div key={index} style={styles.item}>
             <span style={styles.quantity}>
-              {item.quantity} ×
-            </span>{" "}
-            {item.name}
+              {item.quantity}×
+            </span>
+            <span>{item.name}</span>
           </div>
         ))}
       </div>
@@ -1790,7 +1793,7 @@ function OrderDetails({
         )}
 
         <div style={styles.breakdownTotal}>
-          <span>Order total</span>
+          <span>ORDER TOTAL</span>
           <strong>{money(order.total)}</strong>
         </div>
       </div>
@@ -1820,10 +1823,7 @@ export default function RestaurantDashboard() {
   const orderFetcher = useFetcher();
 
   const [activeTab, setActiveTab] = useState("orders");
-
-  const [orders, setOrders] = useState(
-    shopifyOrders || [],
-  );
+  const [orders, setOrders] = useState(shopifyOrders || []);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundUnlocked, setSoundUnlocked] = useState(false);
@@ -1833,6 +1833,9 @@ export default function RestaurantDashboard() {
 
   const [pendingOrderAction, setPendingOrderAction] =
     useState(null);
+
+  const [showAllOrders, setShowAllOrders] =
+    useState(false);
 
   const audioContextRef = useRef(null);
   const alarmTimerRef = useRef(null);
@@ -1902,10 +1905,7 @@ export default function RestaurantDashboard() {
       setOrders((currentOrders) =>
         currentOrders.map((order) =>
           order.id === pendingOrderAction.orderId
-            ? {
-                ...order,
-                status: "new",
-              }
+            ? { ...order, status: "new" }
             : order,
         ),
       );
@@ -1932,9 +1932,8 @@ export default function RestaurantDashboard() {
 
   useEffect(() => {
     try {
-      const savedSetting = window.localStorage.getItem(
-        "mdh_order_sound",
-      );
+      const savedSetting =
+        window.localStorage.getItem("mdh_order_sound");
 
       if (savedSetting === "off") {
         setSoundEnabled(false);
@@ -1976,6 +1975,10 @@ export default function RestaurantDashboard() {
       new Date(a.createdAt).getTime(),
   );
 
+  const visiblePreviousOrders = showAllOrders
+    ? previousOrders
+    : previousOrders.slice(0, 5);
+
   const selectedOrder =
     restaurantOrders.find(
       (order) => order.id === selectedOrderId,
@@ -1986,9 +1989,6 @@ export default function RestaurantDashboard() {
   /*
   =========================================================
   VERIFIED SHOPIFY PAYMENT TOTALS
-
-  Do not calculate earnings from the visible order list.
-  Use the server's captured-payment summary.
   =========================================================
   */
 
@@ -2031,14 +2031,10 @@ export default function RestaurantDashboard() {
   */
 
   function handleOrderDecision(order, action) {
-    if (!order || orderActionSaving) {
-      return;
-    }
+    if (!order || orderActionSaving) return;
 
     const status =
-      action === "accept"
-        ? "accepted"
-        : "rejected";
+      action === "accept" ? "accepted" : "rejected";
 
     setPendingOrderAction({
       orderId: order.id,
@@ -2048,10 +2044,7 @@ export default function RestaurantDashboard() {
     setOrders((currentOrders) =>
       currentOrders.map((currentOrder) =>
         currentOrder.id === order.id
-          ? {
-              ...currentOrder,
-              status,
-            }
+          ? { ...currentOrder, status }
           : currentOrder,
       ),
     );
@@ -2092,9 +2085,7 @@ export default function RestaurantDashboard() {
         window.AudioContext ||
         window.webkitAudioContext;
 
-      if (!AudioContext) {
-        return;
-      }
+      if (!AudioContext) return;
 
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
@@ -2163,10 +2154,7 @@ export default function RestaurantDashboard() {
       setSoundUnlocked(true);
       makeAlarmSound();
     } catch (error) {
-      console.log(
-        "Order sound unavailable",
-        error,
-      );
+      console.log("Order sound unavailable", error);
     }
   }
 
@@ -2188,18 +2176,14 @@ export default function RestaurantDashboard() {
 
   useEffect(() => {
     function unlockOrderSound() {
-      if (!soundEnabledRef.current) {
-        return;
-      }
+      if (!soundEnabledRef.current) return;
 
       try {
         const AudioContext =
           window.AudioContext ||
           window.webkitAudioContext;
 
-        if (!AudioContext) {
-          return;
-        }
+        if (!AudioContext) return;
 
         if (!audioContextRef.current) {
           audioContextRef.current = new AudioContext();
@@ -2223,19 +2207,13 @@ export default function RestaurantDashboard() {
     document.addEventListener(
       "pointerdown",
       unlockOrderSound,
-      {
-        once: true,
-        capture: true,
-      },
+      { once: true, capture: true },
     );
 
     document.addEventListener(
       "keydown",
       unlockOrderSound,
-      {
-        once: true,
-        capture: true,
-      },
+      { once: true, capture: true },
     );
 
     return () => {
@@ -2283,25 +2261,107 @@ export default function RestaurantDashboard() {
 
   return (
     <main style={styles.page}>
-      <div style={styles.container}>
-        <header style={styles.header}>
-          <div>
+      <style>
+        {`
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+          }
+
+          .mdh-dashboard-button:hover {
+            opacity: 0.88;
+          }
+
+          .mdh-dashboard-button:focus-visible {
+            outline: 3px solid #FFCE00;
+            outline-offset: 3px;
+          }
+
+          .mdh-dashboard-button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+          }
+
+          .mdh-order-row:hover {
+            background: #FAFAFA !important;
+          }
+
+          @media (max-width: 600px) {
+            .mdh-header-inner {
+              padding: 16px !important;
+            }
+
+            .mdh-content {
+              padding: 20px 14px 115px !important;
+            }
+
+            .mdh-summary-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+
+            .mdh-order-actions {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+
+            .mdh-header-logo {
+              width: 58px !important;
+              height: 58px !important;
+            }
+
+            .mdh-header-name {
+              font-size: 18px !important;
+            }
+
+            .mdh-status-badge {
+              font-size: 10px !important;
+              padding: 7px 9px !important;
+            }
+
+            .mdh-payment-value {
+              font-size: 25px !important;
+            }
+
+            .mdh-bottom-nav {
+              width: 100% !important;
+              border-radius: 0 !important;
+              bottom: 0 !important;
+            }
+          }
+        `}
+      </style>
+
+      <header style={styles.header}>
+        <div
+          className="mdh-header-inner"
+          style={styles.headerInner}
+        >
+          <div style={styles.headerIdentity}>
             <img
+              className="mdh-header-logo"
               src="/meal-deal-hub-logo.png"
               alt="Meal Deal Hub"
               style={styles.logo}
             />
 
-            <h1 style={styles.restaurantName}>
-              {restaurant.name}
-            </h1>
+            <div style={{ minWidth: 0 }}>
+              <h1
+                className="mdh-header-name"
+                style={styles.restaurantName}
+              >
+                {restaurant.name}
+              </h1>
 
-            <div style={styles.location}>
-              Restaurant ID: {restaurant.restaurantId}
+              <div style={styles.location}>
+                ID: {restaurant.restaurantId}
+              </div>
             </div>
           </div>
 
           <div
+            className="mdh-status-badge"
             style={
               restaurant.acceptingOrders
                 ? styles.openBadge
@@ -2312,12 +2372,36 @@ export default function RestaurantDashboard() {
               ? "● ACCEPTING ORDERS"
               : "● ORDERS PAUSED"}
           </div>
-        </header>
+        </div>
+      </header>
 
+      <div
+        className="mdh-content"
+        style={styles.container}
+      >
         {activeTab === "orders" && (
           <>
+            <div style={styles.pageIntro}>
+              <div>
+                <h2 style={styles.pageTitle}>
+                  Orders
+                </h2>
+
+                <p style={styles.pageSubtitle}>
+                  Manage incoming orders
+                </p>
+              </div>
+
+              <span style={styles.liveIndicator}>
+                ● LIVE
+              </span>
+            </div>
+
             <section style={styles.controls}>
-              <Form method="post">
+              <Form
+                method="post"
+                style={{ flex: "1 1 150px" }}
+              >
                 <input
                   type="hidden"
                   name="intent"
@@ -2329,14 +2413,17 @@ export default function RestaurantDashboard() {
                 />
 
                 <button
+                  className="mdh-dashboard-button"
                   type="submit"
                   disabled={isSaving}
-                  style={
-                    restaurant.acceptingOrders
-                      ? styles.darkButton
-                      : styles.orangeButton
-                  }
+                  style={styles.controlButton}
                 >
+                  <span style={styles.controlIcon}>
+                    {restaurant.acceptingOrders
+                      ? "⏸"
+                      : "▶"}
+                  </span>
+
                   {isSaving
                     ? "SAVING..."
                     : restaurant.acceptingOrders
@@ -2345,30 +2432,32 @@ export default function RestaurantDashboard() {
                 </button>
               </Form>
 
-              {soundEnabled ? (
-                <button
-                  type="button"
-                  style={styles.soundOnButton}
-                  onClick={disableSound}
-                >
-                  🔊 ORDER SOUND ON
+              <button
+                className="mdh-dashboard-button"
+                type="button"
+                style={{
+                  ...styles.controlButton,
+                  flex: "1 1 150px",
+                }}
+                onClick={
+                  soundEnabled
+                    ? disableSound
+                    : enableSound
+                }
+              >
+                <span style={styles.controlIcon}>
+                  {soundEnabled ? "🔊" : "🔇"}
+                </span>
 
-                  {!soundUnlocked && (
-                    <span style={styles.soundHint}>
-                      Activates on first tap
-                    </span>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  style={styles.orangeButton}
-                  onClick={enableSound}
-                >
-                  🔇 ORDER SOUND OFF
-                </button>
-              )}
+                SOUND {soundEnabled ? "ON" : "OFF"}
+              </button>
             </section>
+
+            {soundEnabled && !soundUnlocked && (
+              <p style={styles.soundNotice}>
+                Tap anywhere to enable new-order alerts.
+              </p>
+            )}
 
             {orderLoadError && (
               <section style={styles.errorPanel}>
@@ -2378,76 +2467,88 @@ export default function RestaurantDashboard() {
 
             {firstNewOrder ? (
               <section style={styles.newOrder}>
-                <div style={styles.newLabel}>
-                  🔔 NEW ORDER
+                <div style={styles.newOrderHeading}>
+                  <span style={styles.newOrderBell}>
+                    🔔
+                  </span>
+
+                  <div>
+                    <div style={styles.newLabel}>
+                      NEW ORDER
+                    </div>
+
+                    <div style={styles.newOrderSubheading}>
+                      An order is waiting for your response
+                    </div>
+                  </div>
+
+                  {newOrders.length > 1 && (
+                    <span style={styles.newCount}>
+                      {newOrders.length} NEW
+                    </span>
+                  )}
                 </div>
 
-                <OrderDetails order={firstNewOrder} />
+                <div style={styles.newOrderInner}>
+                  <OrderDetails order={firstNewOrder} />
 
-                <div style={styles.actions}>
-                  <button
-                    type="button"
-                    disabled={orderActionSaving}
-                    style={{
-                      ...styles.acceptButton,
-                      opacity: orderActionSaving
-                        ? 0.6
-                        : 1,
-                      cursor: orderActionSaving
-                        ? "not-allowed"
-                        : "pointer",
-                    }}
-                    onClick={() =>
-                      handleOrderDecision(
-                        firstNewOrder,
-                        "accept",
-                      )
-                    }
+                  <div
+                    className="mdh-order-actions"
+                    style={styles.actions}
                   >
-                    {pendingOrderAction?.orderId ===
-                      firstNewOrder.id &&
-                    pendingOrderAction?.action ===
-                      "accept"
-                      ? "ACCEPTING..."
-                      : "✓ ACCEPT ORDER"}
-                  </button>
+                    <button
+                      className="mdh-dashboard-button"
+                      type="button"
+                      disabled={orderActionSaving}
+                      style={styles.acceptButton}
+                      onClick={() =>
+                        handleOrderDecision(
+                          firstNewOrder,
+                          "accept",
+                        )
+                      }
+                    >
+                      {pendingOrderAction?.orderId ===
+                        firstNewOrder.id &&
+                      pendingOrderAction?.action ===
+                        "accept"
+                        ? "ACCEPTING..."
+                        : "✓ ACCEPT"}
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={orderActionSaving}
-                    style={{
-                      ...styles.rejectButton,
-                      opacity: orderActionSaving
-                        ? 0.6
-                        : 1,
-                      cursor: orderActionSaving
-                        ? "not-allowed"
-                        : "pointer",
-                    }}
-                    onClick={() =>
-                      handleOrderDecision(
-                        firstNewOrder,
-                        "reject",
-                      )
-                    }
-                  >
-                    {pendingOrderAction?.orderId ===
-                      firstNewOrder.id &&
-                    pendingOrderAction?.action ===
-                      "reject"
-                      ? "REJECTING..."
-                      : "× REJECT ORDER"}
-                  </button>
+                    <button
+                      className="mdh-dashboard-button"
+                      type="button"
+                      disabled={orderActionSaving}
+                      style={styles.rejectButton}
+                      onClick={() =>
+                        handleOrderDecision(
+                          firstNewOrder,
+                          "reject",
+                        )
+                      }
+                    >
+                      {pendingOrderAction?.orderId ===
+                        firstNewOrder.id &&
+                      pendingOrderAction?.action ===
+                        "reject"
+                        ? "REJECTING..."
+                        : "× REJECT"}
+                    </button>
+                  </div>
                 </div>
               </section>
             ) : (
               <section style={styles.waiting}>
                 <div style={styles.tick}>✓</div>
 
-                <h2>No New Orders</h2>
+                <h2 style={styles.waitingTitle}>
+                  All Caught Up!
+                </h2>
 
-                <p>
-                  New orders will appear here
+                <p style={styles.greyText}>
+                  No new orders right now.
+                  Incoming orders will appear here
                   automatically.
                 </p>
               </section>
@@ -2455,22 +2556,40 @@ export default function RestaurantDashboard() {
 
             <section style={styles.panel}>
               <div style={styles.titleRow}>
-                <h2 style={{ margin: 0 }}>
-                  Previous Orders
-                </h2>
+                <div style={styles.titleGroup}>
+                  <h2 style={styles.sectionTitle}>
+                    Previous Orders
+                  </h2>
 
-                <span style={styles.count}>
-                  {previousOrders.length}
-                </span>
+                  <span style={styles.count}>
+                    {previousOrders.length}
+                  </span>
+                </div>
+
+                {previousOrders.length > 5 && (
+                  <button
+                    className="mdh-dashboard-button"
+                    type="button"
+                    style={styles.viewAllButton}
+                    onClick={() =>
+                      setShowAllOrders((current) => !current)
+                    }
+                  >
+                    {showAllOrders
+                      ? "Show less"
+                      : "View all →"}
+                  </button>
+                )}
               </div>
 
               {previousOrders.length === 0 ? (
-                <p style={styles.greyText}>
-                  No previous orders.
+                <p style={styles.emptyText}>
+                  No previous orders yet.
                 </p>
               ) : (
-                previousOrders.map((order) => (
+                visiblePreviousOrders.map((order) => (
                   <button
+                    className="mdh-order-row mdh-dashboard-button"
                     type="button"
                     key={order.id}
                     style={styles.previousOrderButton}
@@ -2478,8 +2597,8 @@ export default function RestaurantDashboard() {
                       setSelectedOrderId(order.id)
                     }
                   >
-                    <div style={{ textAlign: "left" }}>
-                      <strong style={{ fontSize: 20 }}>
+                    <div style={styles.previousOrderLeft}>
+                      <strong style={styles.previousOrderNumber}>
                         {order.orderNumber}
                       </strong>
 
@@ -2487,17 +2606,15 @@ export default function RestaurantDashboard() {
                         {order.dateTime}
                       </div>
 
-                      <div
-                        style={styles.previousOrderType}
-                      >
+                      <div style={styles.previousOrderType}>
                         {order.orderType === "pickup"
-                          ? "PICKUP"
-                          : "DELIVERY"}
+                          ? "🛍 COLLECTION"
+                          : "🚗 DELIVERY"}
                       </div>
                     </div>
 
                     <div style={styles.previousOrderRight}>
-                      <strong>
+                      <strong style={styles.previousOrderAmount}>
                         {money(order.total)}
                       </strong>
 
@@ -2509,14 +2626,14 @@ export default function RestaurantDashboard() {
                         }
                       >
                         {String(
-                          order.status,
+                          order.status || "",
                         ).toUpperCase()}
                       </span>
-
-                      <span style={styles.viewOrder}>
-                        VIEW ›
-                      </span>
                     </div>
+
+                    <span style={styles.rowChevron}>
+                      ›
+                    </span>
                   </button>
                 ))
               )}
@@ -2526,103 +2643,131 @@ export default function RestaurantDashboard() {
 
         {activeTab === "payments" && (
           <>
-            <section style={styles.pageHeading}>
-              <h2 style={{ margin: 0 }}>
-                Payments
-              </h2>
+            <div style={styles.pageIntro}>
+              <div>
+                <h2 style={styles.pageTitle}>
+                  Payments
+                </h2>
 
-              <p style={styles.greyText}>
-                Your Meal Deal Hub earnings and payouts.
-              </p>
+                <p style={styles.pageSubtitle}>
+                  Track your earnings and payouts
+                </p>
+              </div>
+            </div>
+
+            <section style={styles.weekSelector}>
+              <div>
+                <div style={styles.weekSelectorTitle}>
+                  📅 THIS WEEK
+                </div>
+
+                <strong style={styles.weekSelectorDate}>
+                  {paymentWeek.startLabel}
+                  {" – "}
+                  {paymentWeek.endLabel}
+                </strong>
+              </div>
+
+              <span style={styles.weekSelectorIcon}>
+                ✓
+              </span>
             </section>
 
-            <div style={styles.grid}>
+            <div
+              className="mdh-summary-grid"
+              style={styles.grid}
+            >
               <PaymentCard
+                icon="🍔"
                 title="MEAL DEAL SALES"
                 value={money(acceptedFoodSales)}
               />
 
               <PaymentCard
+                icon="🚗"
                 title="DELIVERY"
                 value={money(deliveryIncome)}
               />
 
               <PaymentCard
+                icon="↗"
                 title="COMMISSION"
                 value={money(commission)}
+                subtitle="Meal Deal Hub commission"
               />
 
               <PaymentCard
+                icon="£"
                 title="YOU RECEIVE"
                 value={money(restaurantEarnings)}
-              />
-
-              <PaymentCard
-                title="PAID THIS MONTH"
-                value={money(paidThisMonth)}
+                highlight
               />
             </div>
 
-            <section style={styles.payout}>
-              <div style={styles.smallWhite}>
-                NEXT PAYOUT
+            <div style={styles.secondaryGrid}>
+              <div style={styles.paidCard}>
+                <div style={styles.secondaryCardLabel}>
+                  ✓ PAID THIS MONTH
+                </div>
+
+                <div style={styles.secondaryCardValue}>
+                  {money(paidThisMonth)}
+                </div>
               </div>
 
-              <div style={styles.payoutAmount}>
-                {money(restaurantEarnings)}
+              <div style={styles.nextPayoutCard}>
+                <div style={styles.secondaryCardLabel}>
+                  ◷ ESTIMATED NEXT PAYOUT
+                </div>
+
+                <div style={styles.secondaryCardValue}>
+                  {money(restaurantEarnings)}
+                </div>
+
+                <div style={styles.secondaryCardDate}>
+                  Standard date: {paymentWeek.payoutLabel}
+                </div>
               </div>
+            </div>
 
-              <p>
-                Payout period:{" "}
-                <strong>
-                  {paymentWeek.startLabel}
-                  {" – "}
-                  {paymentWeek.endLabel}
-                </strong>
-              </p>
+            <section style={styles.paymentNote}>
+              <strong>
+                This week's payment summary
+              </strong>
 
-              <p>
-                Standard payout date:{" "}
-                <strong>
-                  {paymentWeek.payoutLabel}
-                </strong>
-              </p>
-
-              <p style={styles.payoutNote}>
-                The actual payment date may change for
-                bank holidays. Payments are transferred
-                manually after reconciliation.
-              </p>
-
-              <p>
-                Verified accepted orders this week:{" "}
+              <div style={styles.paymentNoteRow}>
+                <span>Accepted paid orders</span>
                 <strong>
                   {verifiedAcceptedOrderCount}
                 </strong>
-              </p>
+              </div>
 
-              <p>
-                Meal Deal Hub commission:{" "}
-                <strong>
-                  {money(commission)}
-                </strong>
-              </p>
+              <div style={styles.paymentNoteRow}>
+                <span>Commission</span>
+                <strong>{money(commission)}</strong>
+              </div>
 
-              <p>
-                Service fees retained by Meal Deal Hub:{" "}
-                <strong>
-                  {money(serviceFees)}
-                </strong>
+              <div style={styles.paymentNoteRow}>
+                <span>Service fees retained by Meal Deal Hub</span>
+                <strong>{money(serviceFees)}</strong>
+              </div>
+
+              <p style={styles.paymentDisclaimer}>
+                Payouts are transferred manually after
+                reconciliation. Actual payment dates may
+                change for bank holidays.
               </p>
             </section>
 
             <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
-                Payout History
-              </h2>
+              <div style={styles.titleRow}>
+                <h2 style={styles.sectionTitle}>
+                  Payout History
+                </h2>
+              </div>
 
               {payoutHistory.length === 0 ? (
-                <p style={styles.greyText}>
+                <p style={styles.emptyText}>
                   No payout records yet.
                 </p>
               ) : (
@@ -2640,8 +2785,8 @@ export default function RestaurantDashboard() {
                       key={payout.id}
                       style={styles.historyRow}
                     >
-                      <div>
-                        <strong>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={styles.historyDates}>
                           {formatPayoutDate(
                             payout.weekStart,
                           )}
@@ -2653,7 +2798,7 @@ export default function RestaurantDashboard() {
 
                         <div style={styles.greyText}>
                           {isPaid
-                            ? "Paid: "
+                            ? "Recorded payout date: "
                             : "Expected: "}
                           {formatPayoutDate(
                             payout.payoutDate,
@@ -2696,19 +2841,31 @@ export default function RestaurantDashboard() {
 
         {activeTab === "account" && (
           <>
-            <section style={styles.pageHeading}>
-              <h2 style={{ margin: 0 }}>
-                Restaurant Account
-              </h2>
+            <div style={styles.pageIntro}>
+              <div>
+                <h2 style={styles.pageTitle}>
+                  My Account
+                </h2>
 
-              <p style={styles.greyText}>
-                Your Meal Deal Hub restaurant account.
-              </p>
-            </section>
+                <p style={styles.pageSubtitle}>
+                  Restaurant details and settings
+                </p>
+              </div>
+            </div>
 
             <section style={styles.panel}>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
+                  ▣
+                </span>
+
+                <h2 style={styles.sectionTitle}>
+                  Restaurant Information
+                </h2>
+              </div>
+
               <AccountRow
-                label="Restaurant"
+                label="Restaurant Name"
                 value={restaurant.name}
               />
 
@@ -2718,159 +2875,243 @@ export default function RestaurantDashboard() {
               />
 
               <AccountRow
-                label="Login email"
+                label="Email Address"
                 value={user.email}
               />
 
               <AccountRow
-                label="Order status"
+                label="Order Status"
                 value={
                   restaurant.acceptingOrders
-                    ? "Accepting Orders"
-                    : "Orders Paused"
+                    ? "● Accepting Orders"
+                    : "● Orders Paused"
+                }
+                status={
+                  restaurant.acceptingOrders
+                    ? "open"
+                    : "paused"
                 }
               />
             </section>
 
             <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
-                Order Status
-              </h2>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
+                  ⚙
+                </span>
 
-              <p>
-                Temporarily stop new Meal Deal Hub orders
-                whenever your restaurant is too busy.
-              </p>
+                <h2 style={styles.sectionTitle}>
+                  Order Settings
+                </h2>
+              </div>
 
-              <Form method="post">
-                <input
-                  type="hidden"
-                  name="intent"
-                  value={
-                    restaurant.acceptingOrders
-                      ? "pause-orders"
-                      : "resume-orders"
-                  }
-                />
+              <div style={styles.settingRow}>
+                <div>
+                  <strong style={styles.settingTitle}>
+                    Accept New Orders
+                  </strong>
+
+                  <p style={styles.settingDescription}>
+                    Temporarily pause or resume orders.
+                  </p>
+                </div>
+
+                <Form method="post">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value={
+                      restaurant.acceptingOrders
+                        ? "pause-orders"
+                        : "resume-orders"
+                    }
+                  />
+
+                  <button
+                    className="mdh-dashboard-button"
+                    type="submit"
+                    disabled={isSaving}
+                    style={
+                      restaurant.acceptingOrders
+                        ? styles.pauseSmallButton
+                        : styles.resumeSmallButton
+                    }
+                  >
+                    {isSaving
+                      ? "SAVING..."
+                      : restaurant.acceptingOrders
+                        ? "PAUSE"
+                        : "RESUME"}
+                  </button>
+                </Form>
+              </div>
+
+              <div style={styles.settingRow}>
+                <div>
+                  <strong style={styles.settingTitle}>
+                    Sound Notifications
+                  </strong>
+
+                  <p style={styles.settingDescription}>
+                    Play an alert for incoming orders.
+                  </p>
+                </div>
 
                 <button
-                  type="submit"
-                  disabled={isSaving}
-                  style={
-                    restaurant.acceptingOrders
-                      ? styles.darkButton
-                      : styles.orangeButton
+                  className="mdh-dashboard-button"
+                  type="button"
+                  role="switch"
+                  aria-checked={soundEnabled}
+                  aria-label="Sound notifications"
+                  onClick={
+                    soundEnabled
+                      ? disableSound
+                      : enableSound
                   }
+                  style={{
+                    ...styles.toggleTrack,
+                    background: soundEnabled
+                      ? "#FFD400"
+                      : "#D1D5DB",
+                  }}
                 >
-                  {isSaving
-                    ? "SAVING..."
-                    : restaurant.acceptingOrders
-                      ? "PAUSE ORDERS"
-                      : "RESUME ORDERS"}
+                  <span
+                    style={{
+                      ...styles.toggleKnob,
+                      transform: soundEnabled
+                        ? "translateX(23px)"
+                        : "translateX(0)",
+                    }}
+                  />
                 </button>
-              </Form>
+              </div>
             </section>
 
             <section style={styles.panel}>
-              <h2 style={{ marginTop: 0 }}>
-                Sign Out
-              </h2>
+              <div style={styles.accountSectionHeading}>
+                <span style={styles.accountSectionIcon}>
+                  ↪
+                </span>
 
-              <p style={styles.greyText}>
-                Sign out of this restaurant terminal.
+                <h2 style={styles.sectionTitle}>
+                  Sign Out
+                </h2>
+              </div>
+
+              <p style={styles.settingDescription}>
+                Sign out securely from your restaurant
+                dashboard.
               </p>
 
               <a
                 href="/restaurant/logout"
                 style={styles.logoutButton}
               >
-                LOG OUT
+                ↪ LOG OUT
               </a>
             </section>
           </>
         )}
+      </div>
 
-        <nav style={styles.bottomNav}>
-          <button
-            type="button"
-            onClick={() => setActiveTab("orders")}
-            style={
-              activeTab === "orders"
-                ? styles.activeNav
-                : styles.navButton
-            }
-          >
-            🧾 ORDERS
-          </button>
+      <nav
+        className="mdh-bottom-nav"
+        style={styles.bottomNav}
+        aria-label="Restaurant dashboard navigation"
+      >
+        <button
+          className="mdh-dashboard-button"
+          type="button"
+          onClick={() => setActiveTab("orders")}
+          style={
+            activeTab === "orders"
+              ? styles.activeNav
+              : styles.navButton
+          }
+        >
+          <span style={styles.navIcon}>▤</span>
+          <span>ORDERS</span>
+          {newOrders.length > 0 && (
+            <span style={styles.navCount}>
+              {newOrders.length}
+            </span>
+          )}
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("payments")}
-            style={
-              activeTab === "payments"
-                ? styles.activeNav
-                : styles.navButton
-            }
-          >
-            £ PAYMENTS
-          </button>
+        <button
+          className="mdh-dashboard-button"
+          type="button"
+          onClick={() => setActiveTab("payments")}
+          style={
+            activeTab === "payments"
+              ? styles.activeNav
+              : styles.navButton
+          }
+        >
+          <span style={styles.navIcon}>£</span>
+          <span>PAYMENTS</span>
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("account")}
-            style={
-              activeTab === "account"
-                ? styles.activeNav
-                : styles.navButton
-            }
-          >
-            ⚙ ACCOUNT
-          </button>
-        </nav>
+        <button
+          className="mdh-dashboard-button"
+          type="button"
+          onClick={() => setActiveTab("account")}
+          style={
+            activeTab === "account"
+              ? styles.activeNav
+              : styles.navButton
+          }
+        >
+          <span style={styles.navIcon}>⚙</span>
+          <span>ACCOUNT</span>
+        </button>
+      </nav>
 
-        {selectedOrder && (
+      {selectedOrder && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => setSelectedOrderId(null)}
+        >
           <div
-            style={styles.modalOverlay}
-            onClick={() => setSelectedOrderId(null)}
+            style={styles.orderModal}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
-            <div
-              style={styles.orderModal}
-              onClick={(event) =>
-                event.stopPropagation()
+            <button
+              className="mdh-dashboard-button"
+              type="button"
+              style={styles.closeButton}
+              onClick={() =>
+                setSelectedOrderId(null)
+              }
+              aria-label="Close order details"
+            >
+              ×
+            </button>
+
+            <div style={styles.modalHeading}>
+              ORDER DETAILS
+            </div>
+
+            <OrderDetails
+              order={selectedOrder}
+              showStatus
+            />
+
+            <button
+              className="mdh-dashboard-button"
+              type="button"
+              style={styles.modalDoneButton}
+              onClick={() =>
+                setSelectedOrderId(null)
               }
             >
-              <button
-                type="button"
-                style={styles.closeButton}
-                onClick={() =>
-                  setSelectedOrderId(null)
-                }
-              >
-                ×
-              </button>
-
-              <div style={styles.modalHeading}>
-                ORDER DETAILS
-              </div>
-
-              <OrderDetails
-                order={selectedOrder}
-                showStatus={true}
-              />
-
-              <button
-                type="button"
-                style={styles.modalDoneButton}
-                onClick={() =>
-                  setSelectedOrderId(null)
-                }
-              >
-                CLOSE
-              </button>
-            </div>
+              CLOSE
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -2881,28 +3122,79 @@ SMALL COMPONENTS
 =========================================================
 */
 
-function PaymentCard({ title, value }) {
+function PaymentCard({
+  icon,
+  title,
+  value,
+  subtitle,
+  highlight = false,
+}) {
   return (
-    <div style={styles.card}>
-      <div style={styles.cardTitle}>
+    <div
+      style={
+        highlight
+          ? styles.highlightPaymentCard
+          : styles.paymentCard
+      }
+    >
+      <div style={styles.paymentIcon}>
+        {icon}
+      </div>
+
+      <div
+        style={
+          highlight
+            ? styles.highlightCardTitle
+            : styles.paymentCardTitle
+        }
+      >
         {title}
       </div>
 
-      <div style={styles.cardValue}>
+      <div
+        className="mdh-payment-value"
+        style={
+          highlight
+            ? styles.highlightCardValue
+            : styles.paymentCardValue
+        }
+      >
         {value}
       </div>
+
+      {subtitle && (
+        <div style={styles.paymentCardSubtitle}>
+          {subtitle}
+        </div>
+      )}
     </div>
   );
 }
 
-function AccountRow({ label, value }) {
+function AccountRow({
+  label,
+  value,
+  status,
+}) {
   return (
     <div style={styles.accountRow}>
-      <div style={styles.greyText}>
+      <span style={styles.accountLabel}>
         {label}
-      </div>
+      </span>
 
-      <strong>{value}</strong>
+      <strong
+        style={{
+          ...styles.accountValue,
+          color:
+            status === "open"
+              ? "#15803D"
+              : status === "paused"
+                ? "#B42318"
+                : "#111111",
+        }}
+      >
+        {value}
+      </strong>
     </div>
   );
 }
@@ -2916,459 +3208,737 @@ STYLES
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#F5F5F5",
-    fontFamily: "Arial, Helvetica, sans-serif",
-    color: "#111111",
-    padding: 20,
-  },
-
-  container: {
-    maxWidth: 900,
-    margin: "0 auto",
+    background: "#F5F6F8",
+    fontFamily:
+      "Arial, Helvetica, sans-serif",
+    color: "#151515",
+    padding: 0,
+    paddingBottom: 90,
   },
 
   header: {
     background: "#111111",
     color: "#FFFFFF",
-    borderRadius: 18,
-    padding: 24,
+    borderBottom: "4px solid #FFD400",
+  },
+
+  headerInner: {
+    maxWidth: 950,
+    margin: "0 auto",
+    padding: "19px 24px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 20,
-    flexWrap: "wrap",
-    marginBottom: 15,
-    borderBottom: "5px solid #FFD400",
+    gap: 12,
+  },
+
+  headerIdentity: {
+    display: "flex",
+    alignItems: "center",
+    gap: 13,
+    minWidth: 0,
   },
 
   logo: {
-    display: "block",
-    width: 95,
-    height: 95,
+    width: 70,
+    height: 70,
     objectFit: "contain",
-    borderRadius: 18,
-    marginBottom: 12,
+    flexShrink: 0,
   },
 
   restaurantName: {
-    margin: "0 0 6px",
-    fontSize: 28,
+    margin: "0 0 5px",
+    fontSize: 23,
+    fontWeight: 900,
+    lineHeight: 1.2,
     color: "#FFFFFF",
+    overflowWrap: "anywhere",
   },
 
   location: {
-    color: "#CCCCCC",
-    fontSize: 13,
+    color: "#BFC0C2",
+    fontSize: 12,
+    fontWeight: 600,
   },
 
   openBadge: {
-    background: "#FFD400",
-    color: "#111111",
-    padding: "10px 14px",
+    background: "#193B29",
+    color: "#73E6A0",
+    border: "1px solid #35684B",
     borderRadius: 30,
-    fontWeight: 800,
+    padding: "9px 12px",
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    flexShrink: 0,
   },
 
   pausedBadge: {
-    background: "#FDECEC",
-    color: "#B42318",
-    padding: "10px 14px",
+    background: "#442020",
+    color: "#FFB4B4",
+    border: "1px solid #7A3C3C",
     borderRadius: 30,
-    fontWeight: 800,
+    padding: "9px 12px",
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+  },
+
+  container: {
+    maxWidth: 950,
+    margin: "0 auto",
+    padding: "26px 22px 120px",
+  },
+
+  pageIntro: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 22,
+  },
+
+  pageTitle: {
+    fontSize: 30,
+    fontWeight: 900,
+    margin: "0 0 6px",
+    letterSpacing: -0.7,
+  },
+
+  pageSubtitle: {
+    fontSize: 14,
+    color: "#777777",
+    margin: 0,
+    lineHeight: 1.5,
+  },
+
+  liveIndicator: {
+    background: "#E8F8EE",
+    color: "#17813C",
+    borderRadius: 20,
+    padding: "7px 11px",
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
   },
 
   controls: {
-    background: "#FFFFFF",
-    padding: 15,
-    borderRadius: 14,
     display: "flex",
-    gap: 10,
+    gap: 12,
+    marginBottom: 12,
     flexWrap: "wrap",
-    marginBottom: 15,
-    border: "1px solid #DDDDDD",
+  },
+
+  controlButton: {
+    width: "100%",
+    minHeight: 52,
+    padding: "13px 14px",
+    background: "#FFFFFF",
+    color: "#151515",
+    border: "1px solid #E5E7EB",
+    borderRadius: 13,
+    fontWeight: 900,
+    fontSize: 12,
+    cursor: "pointer",
+    boxShadow: "0 3px 10px rgba(0,0,0,0.03)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+  },
+
+  controlIcon: {
+    fontSize: 18,
+  },
+
+  soundNotice: {
+    margin: "0 0 18px",
+    color: "#777777",
+    fontSize: 12,
   },
 
   errorPanel: {
-    background: "#FDECEC",
+    background: "#FFF0F0",
     color: "#B42318",
     border: "1px solid #F5B9B4",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 15,
+    marginBottom: 18,
     fontWeight: 700,
   },
 
-  darkButton: {
-    background: "#111111",
-    color: "#FFFFFF",
-    border: 0,
-    borderRadius: 10,
-    padding: "14px 20px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-
-  orangeButton: {
-    background: "#FFD400",
-    color: "#111111",
-    border: "2px solid #111111",
-    borderRadius: 10,
-    padding: "14px 20px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-
-  soundOnButton: {
-    background: "#FFF9D6",
-    color: "#111111",
-    border: "2px solid #FFD400",
-    borderRadius: 10,
-    padding: "10px 20px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-
-  soundHint: {
-    display: "block",
-    fontSize: 11,
-    marginTop: 3,
-    fontWeight: 600,
-  },
-
   newOrder: {
-    background: "#FFFFFF",
-    border: "4px solid #FFD400",
+    background: "#FFD400",
     borderRadius: 18,
-    padding: 25,
-    marginBottom: 18,
+    padding: 14,
+    marginBottom: 24,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
+  },
+
+  newOrderHeading: {
+    display: "flex",
+    alignItems: "center",
+    gap: 11,
+    padding: "5px 6px 16px",
+  },
+
+  newOrderBell: {
+    width: 43,
+    height: 43,
+    background: "#111111",
+    color: "#FFD400",
+    borderRadius: 12,
+    display: "grid",
+    placeItems: "center",
+    fontSize: 21,
+    flexShrink: 0,
   },
 
   newLabel: {
-    color: "#111111",
-    background: "#FFD400",
-    display: "inline-block",
-    padding: "9px 14px",
-    borderRadius: 8,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 900,
-    marginBottom: 14,
+    color: "#111111",
+    letterSpacing: 0.3,
+  },
+
+  newOrderSubheading: {
+    fontSize: 12,
+    color: "#403800",
+    marginTop: 3,
+    lineHeight: 1.4,
+  },
+
+  newCount: {
+    marginLeft: "auto",
+    background: "#111111",
+    color: "#FFD400",
+    padding: "7px 9px",
+    borderRadius: 20,
+    fontSize: 10,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
+  newOrderInner: {
+    background: "#FFFFFF",
+    borderRadius: 13,
+    padding: 19,
   },
 
   detailTop: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 20,
-    flexWrap: "wrap",
     alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
   },
 
   pickupBadge: {
     display: "inline-block",
-    background: "#FFF9D6",
-    color: "#111111",
-    border: "2px solid #FFD400",
-    borderRadius: 30,
-    padding: "8px 14px",
-    fontSize: 15,
+    background: "#FFF5C5",
+    color: "#665000",
+    borderRadius: 20,
+    padding: "7px 10px",
+    fontSize: 10,
     fontWeight: 900,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 
   deliveryBadge: {
     display: "inline-block",
-    background: "#F0F0F0",
-    color: "#111111",
-    border: "2px solid #111111",
-    borderRadius: 30,
-    padding: "8px 14px",
-    fontSize: 15,
+    background: "#E9F1FF",
+    color: "#2355A2",
+    borderRadius: 20,
+    padding: "7px 10px",
+    fontSize: 10,
     fontWeight: 900,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 
   orderNumber: {
-    fontSize: 32,
-    margin: "10px 0 4px",
+    fontSize: 28,
+    fontWeight: 900,
+    margin: "12px 0 5px",
     color: "#111111",
   },
 
   total: {
-    fontSize: 38,
+    fontSize: 29,
     fontWeight: 900,
     color: "#111111",
+    marginTop: 7,
+  },
+
+  greyText: {
+    color: "#777777",
+    fontSize: 12,
+    lineHeight: 1.6,
   },
 
   customerDetails: {
-    marginTop: 22,
-    marginBottom: 16,
-    lineHeight: 1.7,
-    fontSize: 16,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTop: "1px solid #EEEEEE",
+  },
+
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 900,
+    color: "#888888",
+    letterSpacing: 0.7,
+    marginBottom: 12,
+  },
+
+  infoLine: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 15,
+    padding: "7px 0",
+    fontSize: 13,
+    lineHeight: 1.5,
   },
 
   items: {
-    background: "#FFFBE6",
+    background: "#F8F9FA",
+    border: "1px solid #ECEDEF",
     borderRadius: 12,
-    padding: 18,
+    padding: 15,
     marginTop: 18,
-    border: "1px solid #F3E6A1",
   },
 
   item: {
-    fontSize: 21,
-    fontWeight: 700,
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 11,
     padding: "8px 0",
+    fontSize: 14,
+    fontWeight: 700,
+    lineHeight: 1.5,
   },
 
   quantity: {
+    background: "#FFD400",
     color: "#111111",
+    minWidth: 29,
+    height: 26,
+    borderRadius: 6,
+    display: "grid",
+    placeItems: "center",
+    fontSize: 12,
     fontWeight: 900,
+    flexShrink: 0,
   },
 
   orderBreakdown: {
     marginTop: 18,
     borderTop: "1px solid #EEEEEE",
-    paddingTop: 12,
+    paddingTop: 11,
   },
 
   breakdownRow: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 20,
+    gap: 16,
     padding: "7px 0",
+    fontSize: 13,
+    color: "#5B5B5B",
   },
 
   breakdownTotal: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 20,
-    padding: "12px 0 0",
-    marginTop: 6,
+    gap: 15,
+    padding: "14px 0 0",
+    marginTop: 9,
     borderTop: "2px solid #111111",
-    fontSize: 18,
+    fontSize: 15,
+    fontWeight: 900,
   },
 
   actions: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: 12,
-    marginTop: 25,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 10,
+    marginTop: 22,
   },
 
   acceptButton: {
     width: "100%",
-    minHeight: 64,
-    background: "#FFD400",
-    color: "#111111",
+    minHeight: 53,
+    background: "#111111",
+    color: "#FFFFFF",
     border: "2px solid #111111",
-    borderRadius: 12,
-    fontSize: 18,
+    borderRadius: 10,
+    fontSize: 14,
     fontWeight: 900,
     cursor: "pointer",
   },
 
   rejectButton: {
     width: "100%",
-    minHeight: 64,
-    background: "#FFFFFF",
-    color: "#B42318",
-    border: "2px solid #B42318",
-    borderRadius: 12,
-    fontSize: 18,
+    minHeight: 53,
+    background: "#FFD400",
+    color: "#111111",
+    border: "2px solid #FFD400",
+    borderRadius: 10,
+    fontSize: 14,
     fontWeight: 900,
     cursor: "pointer",
   },
 
   waiting: {
     background: "#FFFFFF",
-    borderRadius: 18,
-    padding: 50,
+    borderRadius: 16,
+    padding: "42px 24px",
     textAlign: "center",
-    marginBottom: 18,
-    border: "1px solid #DDDDDD",
+    marginBottom: 24,
+    border: "1px solid #ECEDEF",
   },
 
   tick: {
-    width: 55,
-    height: 55,
+    width: 60,
+    height: 60,
     borderRadius: "50%",
-    background: "#FFD400",
+    background: "#FFF2B0",
     color: "#111111",
     display: "grid",
     placeItems: "center",
-    margin: "0 auto",
+    margin: "0 auto 17px",
     fontSize: 28,
     fontWeight: 900,
+  },
+
+  waitingTitle: {
+    fontSize: 21,
+    margin: "0 0 10px",
   },
 
   panel: {
     background: "#FFFFFF",
     borderRadius: 16,
-    padding: 22,
-    border: "1px solid #DDDDDD",
-    marginBottom: 18,
-  },
-
-  pageHeading: {
-    background: "#FFFFFF",
-    borderRadius: 16,
-    padding: 22,
-    border: "1px solid #DDDDDD",
-    borderLeft: "5px solid #FFD400",
-    marginBottom: 18,
+    padding: 20,
+    border: "1px solid #E9EAEC",
+    marginBottom: 20,
+    boxShadow: "0 3px 14px rgba(0,0,0,0.025)",
   },
 
   titleRow: {
     display: "flex",
-    gap: 10,
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  titleGroup: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    margin: 0,
+    color: "#151515",
   },
 
   count: {
-    background: "#FFD400",
+    background: "#FFF0A3",
     color: "#111111",
-    minWidth: 26,
-    height: 26,
+    minWidth: 25,
+    height: 25,
     padding: "0 7px",
     borderRadius: 30,
     display: "grid",
     placeItems: "center",
-    fontWeight: 800,
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
+  viewAllButton: {
+    background: "transparent",
+    border: 0,
+    color: "#111111",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  emptyText: {
+    color: "#888888",
+    fontSize: 13,
+    padding: "10px 0",
   },
 
   previousOrderButton: {
     width: "100%",
     background: "#FFFFFF",
     border: 0,
-    borderTop: "1px solid #EEEEEE",
-    padding: "18px 0",
+    borderTop: "1px solid #F0F0F0",
+    padding: "17px 0",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 20,
+    gap: 10,
     cursor: "pointer",
     color: "#111111",
     fontFamily: "inherit",
+    textAlign: "left",
+  },
+
+  previousOrderLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  previousOrderNumber: {
+    display: "block",
+    fontSize: 16,
+    marginBottom: 3,
+  },
+
+  previousOrderType: {
+    fontSize: 10,
+    fontWeight: 900,
+    color: "#555555",
+    marginTop: 7,
   },
 
   previousOrderRight: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
-    gap: 7,
+    gap: 8,
+    flexShrink: 0,
   },
 
-  previousOrderType: {
-    fontSize: 12,
+  previousOrderAmount: {
+    fontSize: 16,
     fontWeight: 900,
-    color: "#111111",
-    marginTop: 5,
   },
 
-  viewOrder: {
-    color: "#111111",
-    fontWeight: 900,
-    fontSize: 12,
-    background: "#FFD400",
-    padding: "5px 9px",
-    borderRadius: 6,
+  rowChevron: {
+    color: "#AAAAAA",
+    fontSize: 25,
+    paddingLeft: 2,
   },
 
   acceptedBadge: {
     display: "inline-block",
-    background: "#E8F5E9",
-    color: "#137333",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
+    background: "#E6F6EC",
+    color: "#14823B",
+    padding: "6px 9px",
+    borderRadius: 20,
+    fontWeight: 900,
+    fontSize: 10,
+    whiteSpace: "nowrap",
   },
 
   rejectedBadge: {
     display: "inline-block",
     background: "#FDECEC",
     color: "#B42318",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
+    padding: "6px 9px",
+    borderRadius: 20,
+    fontWeight: 900,
+    fontSize: 10,
+    whiteSpace: "nowrap",
   },
 
   expectedBadge: {
     display: "inline-block",
-    background: "#FFF9D6",
-    color: "#111111",
-    padding: "8px 12px",
-    borderRadius: 30,
-    fontWeight: 800,
-    fontSize: 12,
+    background: "#FFF4C2",
+    color: "#765800",
+    padding: "6px 9px",
+    borderRadius: 20,
+    fontWeight: 900,
+    fontSize: 10,
+    whiteSpace: "nowrap",
+  },
+
+  weekSelector: {
+    background: "#FFFFFF",
+    border: "1px solid #E9EAEC",
+    borderRadius: 14,
+    padding: "17px 18px",
+    marginBottom: 18,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  weekSelectorTitle: {
+    fontSize: 11,
+    fontWeight: 900,
+    color: "#777777",
+    marginBottom: 8,
+  },
+
+  weekSelectorDate: {
+    fontSize: 14,
+    fontWeight: 900,
+  },
+
+  weekSelectorIcon: {
+    color: "#16803C",
+    fontSize: 19,
   },
 
   grid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: 14,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 13,
+    marginBottom: 15,
+  },
+
+  paymentCard: {
+    background: "#151515",
+    color: "#FFFFFF",
+    borderRadius: 14,
+    padding: 19,
+    minHeight: 145,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
+
+  highlightPaymentCard: {
+    background: "#FFD400",
+    color: "#111111",
+    borderRadius: 14,
+    padding: 19,
+    minHeight: 145,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
+
+  paymentIcon: {
+    color: "#FFD400",
+    fontSize: 24,
+    fontWeight: 900,
+    marginBottom: 15,
+  },
+
+  paymentCardTitle: {
+    fontSize: 10,
+    fontWeight: 900,
+    color: "#BDBDBD",
+    letterSpacing: 0.5,
+    marginBottom: 9,
+  },
+
+  highlightCardTitle: {
+    fontSize: 10,
+    fontWeight: 900,
+    color: "#333333",
+    letterSpacing: 0.5,
+    marginBottom: 9,
+  },
+
+  paymentCardValue: {
+    color: "#FFFFFF",
+    fontSize: 30,
+    fontWeight: 900,
+    letterSpacing: -0.6,
+    overflowWrap: "anywhere",
+  },
+
+  highlightCardValue: {
+    color: "#111111",
+    fontSize: 30,
+    fontWeight: 900,
+    letterSpacing: -0.6,
+    overflowWrap: "anywhere",
+  },
+
+  paymentCardSubtitle: {
+    fontSize: 10,
+    color: "#BDBDBD",
+    marginTop: 7,
+    lineHeight: 1.4,
+  },
+
+  secondaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 13,
     marginBottom: 18,
   },
 
-  card: {
-    background: "#FFFFFF",
-    border: "1px solid #DDDDDD",
-    borderTop: "5px solid #FFD400",
+  paidCard: {
+    background: "#FFF5CB",
+    border: "1px solid #F8E8A0",
     borderRadius: 14,
-    padding: 22,
+    padding: 18,
   },
 
-  cardTitle: {
-    color: "#666666",
-    fontSize: 13,
-    marginBottom: 10,
-    fontWeight: 800,
+  nextPayoutCard: {
+    background: "#ECEEF1",
+    border: "1px solid #E4E6E9",
+    borderRadius: 14,
+    padding: 18,
   },
 
-  cardValue: {
-    fontSize: 28,
+  secondaryCardLabel: {
+    fontSize: 10,
+    fontWeight: 900,
+    color: "#555555",
+    lineHeight: 1.4,
+    marginBottom: 12,
+  },
+
+  secondaryCardValue: {
+    fontSize: 24,
     fontWeight: 900,
     color: "#111111",
+    overflowWrap: "anywhere",
   },
 
-  payout: {
-    background: "#111111",
-    color: "#FFFFFF",
-    borderRadius: 16,
-    padding: 25,
-    marginBottom: 18,
-    borderBottom: "5px solid #FFD400",
+  secondaryCardDate: {
+    color: "#666666",
+    fontSize: 11,
+    marginTop: 10,
+    lineHeight: 1.5,
   },
 
-  smallWhite: {
+  paymentNote: {
+    background: "#FFFFFF",
+    border: "1px solid #E9EAEC",
+    borderRadius: 14,
+    padding: 19,
+    marginBottom: 20,
     fontSize: 13,
-    fontWeight: 800,
-    color: "#FFFFFF",
   },
 
-  payoutAmount: {
-    color: "#FFD400",
-    fontSize: 40,
-    fontWeight: 900,
-    margin: "10px 0 20px",
+  paymentNoteRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 15,
+    paddingTop: 14,
+    color: "#555555",
   },
 
-  payoutNote: {
-    color: "#CCCCCC",
-    fontSize: 13,
-    lineHeight: 1.6,
+  paymentDisclaimer: {
+    fontSize: 11,
+    color: "#888888",
+    lineHeight: 1.7,
+    margin: "16px 0 0",
+    paddingTop: 13,
+    borderTop: "1px solid #EEEEEE",
   },
 
   historyRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 16,
-    flexWrap: "wrap",
-    padding: "18px 0",
+    gap: 12,
+    padding: "17px 0",
     borderTop: "1px solid #EEEEEE",
   },
 
@@ -3376,18 +3946,44 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
-    gap: 8,
+    gap: 7,
+    flexShrink: 0,
+  },
+
+  historyDates: {
+    fontSize: 13,
+    display: "block",
+    marginBottom: 4,
   },
 
   historyAmount: {
-    fontSize: 23,
+    fontSize: 18,
     color: "#111111",
   },
 
   historyCount: {
-    fontSize: 12,
-    color: "#666666",
-    marginTop: 5,
+    fontSize: 11,
+    color: "#777777",
+    marginTop: 6,
+  },
+
+  accountSectionHeading: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 15,
+  },
+
+  accountSectionIcon: {
+    width: 34,
+    height: 34,
+    background: "#FFF2B6",
+    borderRadius: 9,
+    display: "grid",
+    placeItems: "center",
+    color: "#111111",
+    fontWeight: 900,
+    fontSize: 18,
   },
 
   accountRow: {
@@ -3395,77 +3991,195 @@ const styles = {
     borderBottom: "1px solid #EEEEEE",
     display: "flex",
     justifyContent: "space-between",
-    gap: 20,
+    alignItems: "flex-start",
+    gap: 15,
   },
 
-  greyText: {
-    color: "#666666",
+  accountLabel: {
+    color: "#777777",
+    fontSize: 12,
+    flexShrink: 0,
   },
 
-  logoutButton: {
-    display: "inline-block",
+  accountValue: {
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: 800,
+    overflowWrap: "anywhere",
+  },
+
+  settingRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    padding: "17px 0",
+    borderTop: "1px solid #EEEEEE",
+  },
+
+  settingTitle: {
+    fontSize: 13,
+    fontWeight: 900,
+  },
+
+  settingDescription: {
+    color: "#888888",
+    fontSize: 12,
+    lineHeight: 1.6,
+    margin: "5px 0 0",
+  },
+
+  pauseSmallButton: {
     background: "#111111",
     color: "#FFFFFF",
-    textDecoration: "none",
-    borderRadius: 10,
-    padding: "14px 22px",
-    fontWeight: 800,
+    border: 0,
+    borderRadius: 9,
+    padding: "11px 14px",
+    fontSize: 11,
+    fontWeight: 900,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 
-  bottomNav: {
-    background: "#111111",
-    borderRadius: 14,
-    padding: 8,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 6,
-    position: "sticky",
-    bottom: 10,
-    zIndex: 20,
-    border: "1px solid #333333",
-  },
-
-  activeNav: {
+  resumeSmallButton: {
     background: "#FFD400",
     color: "#111111",
     border: 0,
     borderRadius: 9,
-    padding: "16px 8px",
+    padding: "11px 14px",
+    fontSize: 11,
     fontWeight: 900,
     cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  toggleTrack: {
+    width: 51,
+    height: 29,
+    border: 0,
+    borderRadius: 30,
+    padding: 3,
+    cursor: "pointer",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+  },
+
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    background: "#FFFFFF",
+    borderRadius: "50%",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+    transition: "transform 0.2s",
+  },
+
+  logoutButton: {
+    display: "inline-block",
+    background: "#FFFFFF",
+    color: "#C22C2C",
+    textDecoration: "none",
+    border: "1px solid #F0B5B5",
+    borderRadius: 10,
+    padding: "13px 20px",
+    fontSize: 12,
+    fontWeight: 900,
+    marginTop: 17,
+  },
+
+  bottomNav: {
+    position: "fixed",
+    left: "50%",
+    transform: "translateX(-50%)",
+    bottom: 0,
+    width: "min(100%, 950px)",
+    background: "#111111",
+    borderTop: "3px solid #FFD400",
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    zIndex: 50,
+    boxShadow: "0 -4px 25px rgba(0,0,0,0.12)",
+  },
+
+  activeNav: {
+    position: "relative",
+    background: "#111111",
+    color: "#FFD400",
+    border: 0,
+    borderTop: "3px solid #FFD400",
+    marginTop: -3,
+    minHeight: 76,
+    padding: "11px 5px",
+    fontWeight: 900,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
   },
 
   navButton: {
-    background: "transparent",
-    color: "#FFFFFF",
+    position: "relative",
+    background: "#111111",
+    color: "#AFAFAF",
     border: 0,
-    borderRadius: 9,
-    padding: "16px 8px",
+    minHeight: 76,
+    padding: "11px 5px",
     fontWeight: 900,
+    fontSize: 10,
+    letterSpacing: 0.4,
     cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+
+  navIcon: {
+    fontSize: 23,
+    lineHeight: 1,
+  },
+
+  navCount: {
+    position: "absolute",
+    top: 7,
+    right: "24%",
+    background: "#FFD400",
+    color: "#111111",
+    borderRadius: 20,
+    minWidth: 18,
+    height: 18,
+    padding: "0 4px",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 10,
   },
 
   modalOverlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.65)",
+    background: "rgba(0,0,0,0.7)",
     zIndex: 1000,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
+    padding: 14,
     overflowY: "auto",
   },
 
   orderModal: {
     position: "relative",
     width: "100%",
-    maxWidth: 720,
+    maxWidth: 680,
     maxHeight: "90vh",
     overflowY: "auto",
     background: "#FFFFFF",
     borderRadius: 18,
-    padding: 26,
+    padding: 23,
     boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
     borderTop: "5px solid #FFD400",
   },
@@ -3474,13 +4188,13 @@ const styles = {
     position: "absolute",
     top: 12,
     right: 14,
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     borderRadius: "50%",
     border: 0,
     background: "#111111",
     color: "#FFFFFF",
-    fontSize: 26,
+    fontSize: 25,
     cursor: "pointer",
   },
 
@@ -3488,8 +4202,8 @@ const styles = {
     color: "#111111",
     fontWeight: 900,
     letterSpacing: 1,
-    marginBottom: 18,
-    paddingRight: 50,
+    marginBottom: 22,
+    paddingRight: 45,
   },
 
   modalDoneButton: {
@@ -3497,7 +4211,7 @@ const styles = {
     marginTop: 24,
     background: "#FFD400",
     color: "#111111",
-    border: "2px solid #111111",
+    border: 0,
     borderRadius: 10,
     padding: "15px 20px",
     fontWeight: 900,
