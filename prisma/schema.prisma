@@ -29,28 +29,23 @@ model Session {
 }
 
 model OrderDecision {
-  id             Int        @id @default(autoincrement())
-  shopifyOrderId String
-  orderNumber    String
-  restaurantId   Int
-  status         String
+  id              Int        @id @default(autoincrement())
+  shopifyOrderId  String
+  orderNumber     String
+  restaurantId    Int
+  status          String
+  decidedAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  decidedAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  foodSales      Decimal?   @db.Decimal(12, 2)
-  deliveryIncome Decimal?   @db.Decimal(12, 2)
-  serviceFee     Decimal?   @db.Decimal(12, 2)
+  foodSales       Decimal?   @db.Decimal(12, 2)
+  deliveryIncome  Decimal?   @db.Decimal(12, 2)
+  serviceFee      Decimal?   @db.Decimal(12, 2)
 
   paymentCaptured Boolean   @default(false)
   capturedAt      DateTime?
   currencyCode    String?
 
-  Restaurant Restaurant @relation(
-    fields: [restaurantId],
-    references: [id],
-    onDelete: Cascade
-  )
+  Restaurant      Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([shopifyOrderId, restaurantId])
   @@index([restaurantId])
@@ -76,14 +71,14 @@ model RestaurantPayout {
   weekStart          DateTime
   weekEnd            DateTime
   payoutDate         DateTime
-  foodSales          Decimal    @db.Decimal(10, 2)
-  deliveryIncome     Decimal    @db.Decimal(10, 2)
-  commission         Decimal    @db.Decimal(10, 2)
-  serviceFees        Decimal    @db.Decimal(10, 2)
-  restaurantEarnings Decimal    @db.Decimal(10, 2)
-  acceptedOrderCount Int        @default(0)
-  status             String     @default("expected")
-  createdAt          DateTime   @default(now())
+  foodSales          Decimal   @db.Decimal(10, 2)
+  deliveryIncome     Decimal   @db.Decimal(10, 2)
+  commission         Decimal   @db.Decimal(10, 2)
+  serviceFees        Decimal   @db.Decimal(10, 2)
+  restaurantEarnings Decimal   @db.Decimal(10, 2)
+  acceptedOrderCount Int       @default(0)
+  status             String    @default("expected")
+  createdAt          DateTime  @default(now())
   updatedAt          DateTime
   Restaurant         Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
