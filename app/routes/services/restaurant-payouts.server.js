@@ -1,4 +1,4 @@
-import db from "../db.server";
+import db from "./db.server";
 
 const COMMISSION_RATE = 0.1;
 const TIME_ZONE = "Europe/London";
@@ -85,6 +85,16 @@ function dateFromKey(key) {
   return date;
 }
 
+function londonDateKey(date) {
+  const parts = londonDateParts(date);
+
+  return [
+    String(parts.year).padStart(4, "0"),
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
+  ].join("-");
+}
+
 /*
 =========================================================
 PAYMENT WEEK
@@ -169,8 +179,6 @@ async function getBankHolidays() {
       return bankHolidayCache.dates;
     }
 
-    // Do not invent a payout date when holiday data
-    // has never been successfully retrieved.
     throw new Error(
       "Expected payout date is temporarily unavailable.",
     );
@@ -212,10 +220,10 @@ export async function calculateExpectedPayoutDate(
 =========================================================
 CALCULATE RESTAURANT EARNINGS
 
-Only verified, accepted and captured orders count.
+Only accepted orders with verified captured payments
+are included.
 
-The caller must supply a COMPLETE list of orders
-for the restaurant and payment week.
+Rejected, pending and unpaid orders are excluded.
 =========================================================
 */
 
@@ -238,22 +246,26 @@ export function calculateRestaurantEarnings(
       continue;
     }
 
-    const financialStatus = String(
-      order.financialStatus || "",
-    ).toUpperCase();
-
-    // PARTIALLY_PAID is deliberately excluded.
-    // A partially paid order needs separate reconciliation.
-    if (financialStatus !== "PAID") {
-      continue;
-    }
-
     if (order.paymentCaptured !== true) {
       continue;
     }
 
+    if (!order.capturedAt) {
+      continue;
+    }
+
+    const currencyCode = String(
+      order.currencyCode || "",
+    ).toUpperCase();
+
+    if (currencyCode !== "GBP") {
+      throw new Error(
+        "Only verified GBP orders can be included.",
+      );
+    }
+
     const orderId = String(
-      order.id || order.shopifyOrderId || "",
+      order.shopifyOrderId || order.id || "",
     );
 
     if (!orderId) {
@@ -271,9 +283,9 @@ export function calculateRestaurantEarnings(
     seenOrderIds.add(orderId);
 
     if (
-      order.foodTotal === undefined ||
-      order.delivery === undefined ||
-      order.serviceFee === undefined
+      order.foodTotal == null ||
+      order.delivery == null ||
+      order.serviceFee == null
     ) {
       throw new Error(
         `Financial information is incomplete for ${orderId}.`,
@@ -310,14 +322,97 @@ export function calculateRestaurantEarnings(
 
 /*
 =========================================================
+GET VERIFIED ORDERS FOR A PAYMENT WEEK
+
+Only reads saved order decisions that are:
+
+- Accepted
+- Payment captured
+- Captured date recorded
+- GBP currency
+
+Rejected orders cannot enter this result.
+=========================================================
+*/
+
+export async function getVerifiedRestaurantOrdersForWeek({
+  restaurantId,
+  weekStart,
+  weekEnd,
+}) {
+  const id = Number(restaurantId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error("Invalid restaurant ID.");
+  }
+
+  const start = dateFromKey(dateKey(weekStart));
+  const end = dateFromKey(dateKey(weekEnd));
+
+  const decisions = await db.orderDecision.findMany({
+    where: {
+      restaurantId: id,
+      status: "accepted",
+      paymentCaptured: true,
+      currencyCode: "GBP",
+      capturedAt: {
+        not: null,
+      },
+    },
+  });
+
+  const weekStartKey = dateKey(start);
+  const weekEndKey = dateKey(end);
+
+  return decisions
+    .filter((decision) => {
+      const capturedKey = londonDateKey(
+        decision.capturedAt,
+      );
+
+      return (
+        capturedKey >= weekStartKey &&
+        capturedKey <= weekEndKey
+      );
+    })
+    .map((decision) => {
+      if (
+        decision.foodSales == null ||
+        decision.deliveryIncome == null ||
+        decision.serviceFee == null
+      ) {
+        throw new Error(
+          `Incomplete payment snapshot for ${decision.shopifyOrderId}.`,
+        );
+      }
+
+      return {
+        id: decision.shopifyOrderId,
+        shopifyOrderId: decision.shopifyOrderId,
+        status: decision.status,
+        paymentCaptured: decision.paymentCaptured,
+        currencyCode: decision.currencyCode,
+        capturedAt: decision.capturedAt,
+        foodTotal: decision.foodSales,
+        delivery: decision.deliveryIncome,
+        serviceFee: decision.serviceFee,
+      };
+    });
+}
+
+/*
+=========================================================
 SAVE WEEKLY PAYOUT
 
-IMPORTANT:
-- Requires complete, verified order data.
-- Does not create payouts for the current open week.
-- Does not overwrite paid payouts.
-- Uses a database transaction to protect against
-  concurrent payout updates.
+IMPORTANT SECURITY RULE:
+
+The payout is ALWAYS recalculated from verified
+database records.
+
+The supplied orders array is not trusted as the
+source of financial totals.
+
+Paid payouts are never overwritten.
 =========================================================
 */
 
@@ -340,8 +435,8 @@ export async function saveRestaurantWeeklyPayout({
     );
   }
 
-  if (!Array.isArray(orders)) {
-    throw new Error("Complete order list is required.");
+  if (orders !== undefined && !Array.isArray(orders)) {
+    throw new Error("Orders must be an array.");
   }
 
   const start = dateFromKey(dateKey(weekStart));
@@ -365,7 +460,21 @@ export async function saveRestaurantWeeklyPayout({
     );
   }
 
-  const earnings = calculateRestaurantEarnings(orders);
+  /*
+  ========================================================
+  LOAD VERIFIED ORDERS DIRECTLY FROM DATABASE
+  ========================================================
+  */
+
+  const verifiedOrders =
+    await getVerifiedRestaurantOrdersForWeek({
+      restaurantId: id,
+      weekStart: start,
+      weekEnd: end,
+    });
+
+  const earnings =
+    calculateRestaurantEarnings(verifiedOrders);
 
   const payoutDate =
     await calculateExpectedPayoutDate(end);
@@ -379,9 +488,6 @@ export async function saveRestaurantWeeklyPayout({
 
   return db.$transaction(
     async (tx) => {
-      // Lock the restaurant row so two payout
-      // calculations for the same restaurant cannot
-      // update the payout simultaneously.
       await tx.$queryRaw`
         SELECT id
         FROM "Restaurant"
@@ -396,7 +502,9 @@ export async function saveRestaurantWeeklyPayout({
 
       if (
         existing &&
-        PAID_STATUSES.includes(existing.status)
+        PAID_STATUSES.includes(
+          String(existing.status).toLowerCase(),
+        )
       ) {
         return existing;
       }
@@ -433,6 +541,92 @@ export async function saveRestaurantWeeklyPayout({
 
 /*
 =========================================================
+GENERATE LAST COMPLETED WEEK'S PAYOUT
+=========================================================
+*/
+
+export async function generateRestaurantWeeklyPayout(
+  restaurantId,
+) {
+  const id = Number(restaurantId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error("Invalid restaurant ID.");
+  }
+
+  const currentWeek = getRestaurantPaymentWeek();
+
+  const weekStart = addDays(
+    currentWeek.weekStart,
+    -7,
+  );
+
+  const weekEnd = addDays(
+    currentWeek.weekStart,
+    -1,
+  );
+
+  return saveRestaurantWeeklyPayout({
+    restaurantId: id,
+    weekStart,
+    weekEnd,
+    ordersComplete: true,
+  });
+}
+
+/*
+=========================================================
+GENERATE PAYOUTS FOR ALL ACTIVE RESTAURANTS
+=========================================================
+*/
+
+export async function generateAllRestaurantWeeklyPayouts() {
+  const restaurants = await db.restaurant.findMany({
+    where: {
+      active: true,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  const results = [];
+
+  for (const restaurant of restaurants) {
+    try {
+      const payout =
+        await generateRestaurantWeeklyPayout(
+          restaurant.id,
+        );
+
+      results.push({
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        success: true,
+        payoutId: payout.id,
+        amount: Number(payout.restaurantEarnings),
+      });
+    } catch (error) {
+      console.error(
+        `PAYOUT GENERATION FAILED FOR ${restaurant.name}:`,
+        error,
+      );
+
+      results.push({
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return results;
+}
+
+/*
+=========================================================
 PAYOUT HISTORY
 =========================================================
 */
@@ -464,8 +658,6 @@ export async function getRestaurantPayoutHistory(
 /*
 =========================================================
 PAID THIS MONTH
-
-Uses UK calendar dates for the month boundaries.
 =========================================================
 */
 

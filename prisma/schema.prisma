@@ -8,6 +8,12 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/*
+=========================================================
+SHOPIFY SESSION
+=========================================================
+*/
+
 model Session {
   id                  String    @id
   shop                String
@@ -28,18 +34,24 @@ model Session {
   refreshTokenExpires DateTime?
 }
 
+/*
+=========================================================
+ORDER DECISIONS
+=========================================================
+*/
+
 model OrderDecision {
-  id              Int        @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   shopifyOrderId  String
   orderNumber     String
   restaurantId    Int
   status          String
-  decidedAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  decidedAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  foodSales       Decimal?   @db.Decimal(12, 2)
-  deliveryIncome  Decimal?   @db.Decimal(12, 2)
-  serviceFee      Decimal?   @db.Decimal(12, 2)
+  foodSales       Decimal?  @db.Decimal(12, 2)
+  deliveryIncome  Decimal?  @db.Decimal(12, 2)
+  serviceFee      Decimal?  @db.Decimal(12, 2)
 
   paymentCaptured Boolean   @default(false)
   capturedAt      DateTime?
@@ -52,34 +64,51 @@ model OrderDecision {
   @@index([status])
 }
 
+/*
+=========================================================
+RESTAURANTS
+=========================================================
+*/
+
 model Restaurant {
-  id               Int                @id @default(autoincrement())
-  restaurantId     String             @unique
+  id               Int                  @id @default(autoincrement())
+  restaurantId     String               @unique
   name             String
-  active           Boolean            @default(true)
-  acceptingOrders  Boolean            @default(true)
-  createdAt        DateTime           @default(now())
+  active           Boolean              @default(true)
+  acceptingOrders  Boolean              @default(true)
+  createdAt        DateTime             @default(now())
   updatedAt        DateTime
+
   OrderDecision    OrderDecision[]
   RestaurantPayout RestaurantPayout[]
   RestaurantUser   RestaurantUser[]
+  PushSubscription PushSubscription[]
 }
 
+/*
+=========================================================
+RESTAURANT PAYOUTS
+=========================================================
+*/
+
 model RestaurantPayout {
-  id                 Int        @id @default(autoincrement())
+  id                 Int       @id @default(autoincrement())
   restaurantId       Int
   weekStart          DateTime
   weekEnd            DateTime
   payoutDate         DateTime
+
   foodSales          Decimal   @db.Decimal(10, 2)
   deliveryIncome     Decimal   @db.Decimal(10, 2)
   commission         Decimal   @db.Decimal(10, 2)
   serviceFees        Decimal   @db.Decimal(10, 2)
   restaurantEarnings Decimal   @db.Decimal(10, 2)
+
   acceptedOrderCount Int       @default(0)
   status             String    @default("expected")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime
+
   Restaurant         Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, weekStart])
@@ -89,18 +118,47 @@ model RestaurantPayout {
   @@index([weekStart])
 }
 
+/*
+=========================================================
+RESTAURANT USERS
+=========================================================
+*/
+
 model RestaurantUser {
-  id               Int        @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   restaurantId     Int
-  email            String     @unique
+  email            String    @unique
   passwordHash     String
   firstName        String?
   lastName         String?
-  active           Boolean    @default(true)
-  activationToken  String?    @unique
+  active           Boolean   @default(true)
+  activationToken  String?   @unique
   activationExpiry DateTime?
-  activated        Boolean    @default(false)
-  createdAt        DateTime   @default(now())
+  activated        Boolean   @default(false)
+  createdAt        DateTime  @default(now())
   updatedAt        DateTime
+
   Restaurant       Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+}
+
+/*
+=========================================================
+IPHONE & ANDROID PUSH NOTIFICATIONS
+=========================================================
+*/
+
+model PushSubscription {
+  id           Int      @id @default(autoincrement())
+  restaurantId Int
+
+  endpoint     String   @unique @db.Text
+  p256dh       String   @db.Text
+  auth         String   @db.Text
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  Restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
 }

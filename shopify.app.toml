@@ -19,6 +19,11 @@ api_version = "2026-10"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
+  # NEW ORDER WEBHOOK - PHONE PUSH NOTIFICATIONS
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/create"
+  topics = [ "orders/create" ]
+
 [access_scopes]
 # write_orders includes the order access needed for payment capture/void
 scopes = "write_orders,read_customers,read_merchant_managed_fulfillment_orders,write_metaobject_definitions,write_metaobjects,write_products"

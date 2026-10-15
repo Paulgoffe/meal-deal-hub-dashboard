@@ -17,6 +17,7 @@ import crypto from "node:crypto";
 
 import db from "../db.server";
 import shopify from "../shopify.server";
+import PhoneNotifications from "../PhoneNotifications";
 
 const COOKIE_NAME = "mdh_restaurant_session";
 const SHOP_DOMAIN = "bite-pfyaja4s.myshopify.com";
@@ -1611,16 +1612,16 @@ export async function action({ request }) {
     */
 
     const snapshot = {
-  status: "accepted",
-  orderNumber,
-  foodSales: foodSales.toFixed(2),
-  deliveryIncome: deliveryIncome.toFixed(2),
-  serviceFee: serviceFee.toFixed(2),
-  paymentCaptured: true,
-  capturedAt,
-  currencyCode,
-  updatedAt: new Date(),
-};
+      status: "accepted",
+      orderNumber,
+      foodSales: foodSales.toFixed(2),
+      deliveryIncome: deliveryIncome.toFixed(2),
+      serviceFee: serviceFee.toFixed(2),
+      paymentCaptured: true,
+      capturedAt,
+      currencyCode,
+      updatedAt: new Date(),
+    };
 
     await db.orderDecision.upsert({
       where: {
@@ -2463,6 +2464,9 @@ export default function RestaurantDashboard() {
 
                 SOUND {soundEnabled ? "ON" : "OFF"}
               </button>
+
+              {/* PHONE PUSH NOTIFICATIONS */}
+              <PhoneNotifications />
             </section>
 
             {soundEnabled && !soundUnlocked && (
